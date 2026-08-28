@@ -4,62 +4,52 @@
 \alias{compute_tau}
 \title{Compute the FSSD feature matrix}
 \usage{
-compute_tau(X, grads, V, kernel_obj)
+compute_tau(X, scores, V, kernel_obj)
 }
 \arguments{
-\item{X}{Numeric sample matrix.}
+\item{X}{Numeric \eqn{\tilde n\times d} sample matrix.}
 
-\item{grads}{Score matrix for \code{X}.}
+\item{scores}{Numeric \eqn{\tilde n\times d} score matrix for \code{X}.}
 
-\item{V}{Matrix of FSSD test locations.}
+\item{V}{Numeric \verb{J x d} matrix representing \code{L}, one test location per row.}
 
 \item{kernel_obj}{Stein kernel object.}
 }
 \value{
-Numeric matrix with \code{nrow(X)} rows and \code{ncol(X) * nrow(V)} columns. Row \code{i}
-is the stacked and scaled feature vector \code{tau(x_i)}. Columns are ordered by
-test location first and coordinate second: all \code{d} coordinates for \code{V[1, ]},
-then all \code{d} coordinates for \code{V[2, ]}, and so on. The matrix is intended to
-be passed to \code{\link[=compute_fssd_unbiased_stat]{compute_fssd_unbiased_stat()}} and
-\code{\link[=compute_fssd_null_pvalue]{compute_fssd_null_pvalue()}}.
+Numeric \eqn{\tilde n \times dJ} matrix. Row \code{i} is \code{tau(x_i)}; columns are
+ordered by test location and then coordinate.
 }
 \description{
-Builds the matrix of \code{tau(x_i)} features used by the FSSD statistic and its
-null simulation. This is the feature-construction step of the FSSD algorithm.
+Builds the row-feature matrix used by \code{\link[=fssd_statistic]{fssd_statistic()}} and
+\code{\link[=fssd_null_pvalue]{fssd_null_pvalue()}}. The rows of \code{V} represent the test locations
+\eqn{L = \{v_1,\ldots,v_J\}}.
 }
 \details{
-For sample \code{x} with target score \code{s_p(x)} and one test location \code{v}, the
-paper's feature is
-\deqn{\xi_p(x, v) = s_p(x) k(x, v) + \nabla_x k(x, v).}
-The output row stacks these feature vectors for all \code{J} locations and scales
-them by \code{1 / sqrt(d * J)}, where \code{d} is the sample dimension. The resulting
-matrix has one row per sample and \code{d * J} columns. More explicitly, columns
-\code{((j - 1) * d + 1):(j * d)} contain
-\eqn{\xi_p(x_i, v_j) / \sqrt{dJ}} for all rows \code{i}. Inner products of these
-rows are the \eqn{\Delta(x, y) = \tau(x)^T\tau(y)} terms used in the FSSD
-U-statistic.
+For observation \eqn{x_i}, target score \eqn{s_p(x_i)}, and test location
+\eqn{v_j},
+define
+\deqn{
+\xi_p(x_i,v_j)
+  = s_p(x_i)k(x_i,v_j) + \nabla_x k(x_i,v_j).
+}
+With \code{d = ncol(X)} and \code{J = nrow(V)}, the returned row is
+\deqn{
+\tau_i = \tau(x_i)
+  = \frac{1}{\sqrt{dJ}}
+    \operatorname{vec}\{\xi_p(x_i,v_1),\ldots,\xi_p(x_i,v_J)\}
+  \in \mathbb{R}^{dJ}.
+}
+The block of \code{d} columns associated with row \code{j} of \code{V} contains
+\eqn{\xi_p(x_i,v_j)/\sqrt{dJ}}.
 
-This function is the FSSD analogue of building a Stein-kernel matrix. It
-keeps the feature representation instead of immediately taking all pairwise
-inner products. That design lets \code{\link[=compute_fssd_unbiased_stat]{compute_fssd_unbiased_stat()}} compute the
-statistic and lets \code{\link[=compute_fssd_null_pvalue]{compute_fssd_null_pvalue()}} estimate the null covariance
-from the same \code{tau} matrix.
-
-Moving sideways from \code{\link[=stein_kernel_matrix]{stein_kernel_matrix()}} to \code{compute_tau()} changes the
-second argument of the kernel calculation from sample rows to fixed test
-locations. For each row \code{x_i} and location \code{v_j}, the function calls the
-base kernel and its \code{x}-gradient through \code{\link[=eval_kernel]{eval_kernel()}} and
-\code{\link[=grad_x_kernel]{grad_x_kernel()}}. It does not call \code{\link[=trace_mixed_kernel]{trace_mixed_kernel()}} because FSSD does
-not directly assemble the full pairwise scalar \code{k0(x_i, x_l)}. Instead it
-applies one Stein operator at the sample point and stores the finite-location
-feature vector; \code{\link[=compute_fssd_unbiased_stat]{compute_fssd_unbiased_stat()}} later forms the paper's
-one-sample second-order (pairwise) U-statistic by inner products of feature
-vectors from distinct observations.
+This function only constructs the features. For the fixed-location null
+calibration, \code{L} and the kernel, including its scale, must be fixed
+independently of the rows in \code{X}, or selected using separate training data.
 }
 \examples{
 X <- matrix(c(-1, 0, 1), ncol = 1)
-grads <- -X
+scores <- -X
 V <- matrix(0, ncol = 1)
 kernel <- stein_kernel(type = "gaussian_rbf", h = 1)
-compute_tau(X, grads, V, kernel)
+compute_tau(X, scores, V, kernel)
 }

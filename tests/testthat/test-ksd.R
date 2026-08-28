@@ -15,16 +15,41 @@ test_that("KSD U helpers return matrix, statistic, and bootstrap outputs", {
   expect_htest_contract(res)
 })
 
-test_that("prepare_ksd_u_inputs validates samples, scores, and scaling", {
+test_that("KSD GOF wrappers use their article-scale statistics", {
+  X <- small_x(6)
+  K0_u <- ksd_uq_matrix(X, normal_score, scaling = 1)
+  K0_v <- ksd_vq_matrix(X, normal_score, scaling = 1)
+
+  set.seed(41)
+  u_boot <- ksd_u_bootstrap(K0_u, nboot = 5)
+  set.seed(41)
+  u_test <- ksd_u_test(
+    X, normal_score, scaling = 1, nboot = 5, return_raw_boot = TRUE
+  )
+
+  set.seed(42)
+  v_boot <- ksd_v_bootstrap(K0_v, nboot = 5)
+  set.seed(42)
+  v_test <- ksd_v_test(
+    X, normal_score, scaling = 1, nboot = 5, return_raw_boot = TRUE
+  )
+
+  expect_equal(unname(u_test$statistic), ksd_u_statistic(K0_u))
+  expect_equal(u_test$bootstrap_samples, u_boot)
+  expect_equal(unname(v_test$statistic), ksd_v_statistic(K0_v))
+  expect_equal(v_test$bootstrap_samples, v_boot)
+})
+
+test_that("prepare_ksd_inputs validates samples, scores, and scaling", {
   X <- small_x(5)
-  prep <- steinsampling:::prepare_ksd_u_inputs(
+  prep <- steinsampling:::.prepare_ksd_inputs(
     X, normal_score, scaling = NULL
   )
   med <- find_median_distance(X)
 
-  expect_named(prep, c("X", "grads", "kernel_obj", "kernel_name", "scaling"))
+  expect_named(prep, c("X", "scores", "kernel_obj", "kernel_name", "scaling"))
   expect_equal(dim(prep$X), c(5L, 1L))
-  expect_equal(dim(prep$grads), c(5L, 1L))
+  expect_equal(dim(prep$scores), c(5L, 1L))
   expect_equal(prep$kernel_name, "gaussian_rbf")
   expect_gt(prep$scaling, 0)
   expect_length(med, 1L)
@@ -37,13 +62,10 @@ test_that("KSD lazy RBF preserves preconditioning and uses its metric", {
   lazy <- stein_kernel(type = "gaussian_rbf", precon = precon)
   transformed_scale <- find_median_distance(X %*% t(chol(precon)))
 
-  prep_u <- steinsampling:::prepare_ksd_u_inputs(X, normal_score, kernel = lazy)
-  prep_v <- steinsampling:::prepare_ksd_v_inputs(X, normal_score, kernel = lazy)
+  prep <- steinsampling:::.prepare_ksd_inputs(X, normal_score, kernel = lazy)
 
-  expect_equal(prep_u$kernel_obj$precon, precon)
-  expect_equal(prep_v$kernel_obj$precon, precon)
-  expect_equal(prep_u$kernel_obj$h2, transformed_scale)
-  expect_equal(prep_v$kernel_obj$h2, transformed_scale)
+  expect_equal(prep$kernel_obj$precon, precon)
+  expect_equal(prep$kernel_obj$h2, transformed_scale)
   expect_null(lazy$h2)
 })
 
@@ -97,24 +119,26 @@ test_that("KSD tests return htest metadata and raw bootstrap samples", {
   expect_htest_contract(ksd_u)
   expect_named(ksd_u, c(
     "statistic", "p.value", "method", "data.name", "parameter",
-    "bootstrap_samples"
+    "kernel", "bootstrap_samples"
   ))
   expect_true(grepl("gaussian_rbf", ksd_u$method, fixed = TRUE))
   expect_equal(unname(ksd_u$parameter["nboot"]), 5)
   expect_equal(unname(ksd_u$parameter["scaling"]), 1)
   expect_length(ksd_u$bootstrap_samples, 5L)
   expect_finite_numeric(ksd_u$bootstrap_samples)
+  expect_s3_class(ksd_u$kernel, "SteinKernel_gaussian_rbf")
 
   expect_htest_contract(ksd_v)
   expect_named(ksd_v, c(
     "statistic", "p.value", "method", "data.name", "parameter",
-    "bootstrap_samples"
+    "kernel", "bootstrap_samples"
   ))
   expect_true(grepl("gaussian_rbf", ksd_v$method, fixed = TRUE))
   expect_equal(unname(ksd_v$parameter["nboot"]), 5)
   expect_equal(unname(ksd_v$parameter["scaling"]), 1)
   expect_length(ksd_v$bootstrap_samples, 5L)
   expect_finite_numeric(ksd_v$bootstrap_samples)
+  expect_s3_class(ksd_v$kernel, "SteinKernel_gaussian_rbf")
 })
 
 test_that("KSD bootstrap helpers return finite small-sample vectors", {
@@ -164,7 +188,7 @@ test_that("KSD bootstrap inputs reject invalid counts and probabilities", {
 
 test_that("KSD p-values use the documented finite-bootstrap correction", {
   expect_equal(
-    steinsampling:::bootstrap_pvalue_right_tail(c(0, 1, 2), 1),
+    steinsampling:::.bootstrap_pvalue_right_tail(c(0, 1, 2), 1),
     3 / 4
   )
 })

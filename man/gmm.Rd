@@ -2,9 +2,12 @@
 % Please edit documentation in R/gmm_model.R
 \name{gmm}
 \alias{gmm}
+\alias{print.gmm}
 \title{Create a Gaussian mixture model}
 \usage{
 gmm(nComp = NULL, mu = NULL, sigma = NULL, weights = NULL, d = NULL)
+
+\method{print}{gmm}(x, ...)
 }
 \arguments{
 \item{nComp}{Number of mixture components. If \code{NULL}, five components are
@@ -23,48 +26,34 @@ positive value. Values are normalized to sum to one.}
 
 \item{d}{Dimension of each sample. If omitted, it is inferred from \code{mu} or
 \code{sigma}, and otherwise defaults to one.}
+
+\item{x}{A \code{"gmm"} object.}
+
+\item{...}{Ignored.}
 }
 \value{
-A list with components:
-\code{nComp}, the number of mixture components;
-\code{mu}, a \verb{d x nComp} matrix whose column \code{k} is component mean \code{mu_k};
-\code{sigma}, a \verb{d x d x nComp} array whose slice \code{sigma[, , k]} is covariance
-matrix \code{Sigma_k};
-\code{weights}, normalized component probabilities; and
-\code{d}, the dimension of each observation. The list is the common input object
-for the other Gaussian mixture helpers.
+An object of class \code{"gmm"} containing \code{nComp}; the \verb{d x nComp} mean matrix
+\code{mu}; the \verb{d x d x nComp} covariance array \code{sigma}; normalized \code{weights};
+and dimension \code{d}.
 }
 \description{
-Builds a Gaussian mixture model object for simulations and examples.
+Constructs a Gaussian mixture distribution with \code{nComp} components.
 }
 \details{
-A Gaussian mixture draws each observation in two steps. First it chooses a
-component \code{k} with probability \code{weights[k]}. Then it draws the observation
-from the Gaussian distribution with mean \code{mu[, k]} and covariance
-\code{sigma[, , k]}. Its density is
+The model density is
 \deqn{p(x) = \sum_{k=1}^K w_k \phi(x; \mu_k, \Sigma_k),}
-where \code{w_k} is the component weight and \code{phi} is the Gaussian density.
+where \eqn{w_k}, \eqn{\mu_k}, and \eqn{\Sigma_k} are the weight, mean, and
+covariance of component \eqn{k}. Weights are normalized to sum to one.
 
-If \code{nComp} is \code{NULL}, the function creates a five-component mixture in
-dimension \code{d}, with \code{d = 1} by default. If means or covariances are omitted,
-random means and identity covariance matrices are filled in.
-
-The returned object is deliberately a simple list because the package uses it
-as an example target distribution rather than as a fitted statistical model.
-The fields are exactly the quantities needed by \code{\link[=rgmm]{rgmm()}},
-\code{\link[=likelihoodgmm]{likelihoodgmm()}}, \code{\link[=posteriorgmm]{posteriorgmm()}}, \code{\link[=scorefunctiongmm]{scorefunctiongmm()}}, and
-\code{\link[=get_score_evaluator]{get_score_evaluator()}}: weights for component probabilities, means and
-covariances for Gaussian densities, and dimension \code{d} for input checking.
+By default, \code{nComp = 5} and \code{d = 1}. If \code{mu} is omitted, centered random
+means are generated. If \code{sigma} is omitted, every component uses the
+identity covariance matrix.
 }
 \examples{
-# Default one-dimensional Gaussian mixture model
 model <- gmm()
 
-# One-dimensional Gaussian mixture model with three components
-model <- gmm(nComp = 3)
-
-# Three-dimensional mixture with specified means, covariances, and weights
 mu <- matrix(c(1, 2, 3, 2, 3, 4, 5, 6, 7), ncol = 3)
 sigma <- array(diag(3), c(3, 3, 3))
-model <- gmm(nComp = 3, mu = mu, sigma = sigma, weights = c(0.2, 0.4, 0.4), d = 3)
+model <- gmm(nComp = 3, mu = mu, sigma = sigma,
+             weights = c(0.2, 0.4, 0.4), d = 3)
 }

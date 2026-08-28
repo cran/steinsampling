@@ -10,16 +10,14 @@ sp_mcmc_criterion(
 )
 }
 \arguments{
-\item{criterion}{Criterion name, function, or criterion object.}
+\item{criterion}{Start-rule name, custom function, or criterion object.}
 
 \item{criterion_args}{Extra arguments passed to a custom criterion function.}
 }
 \value{
-A list with \code{label} and \code{select}. \code{label} is stored in the final \code{\link[=sp_mcmc]{sp_mcmc()}}
-output. \code{select} is a function that takes an \code{\link[=sp_mcmc_state]{sp_mcmc_state()}} object and
-returns one row index into \code{state$X}. Returning this small object, rather
-than returning an index immediately, is necessary because the state changes
-at every SP-MCMC step.
+A list with \code{label}, stored in the final \code{\link[=sp_mcmc]{sp_mcmc()}} output, and \code{select}, a
+function taking an \code{\link[=sp_mcmc_state]{sp_mcmc_state()}} object and returning one row index into
+\code{state$X}.
 }
 \description{
 \code{criterion} may be one of \code{"last"}, \code{"rand"}, \code{"infl"}, or a function that
@@ -29,22 +27,20 @@ accepts an \code{sp_mcmc_state} object and returns a one-based index into
 \details{
 The SP-MCMC paper studies three rules for choosing where the next candidate
 chain starts. \code{"last"} starts at the most recently selected point. \code{"rand"}
-chooses a selected point uniformly at random. \code{"infl"} computes each point's
-current influence from the Stein kernel matrix,
+chooses a selected point uniformly at random. \code{"infl"} starts at a most
+influential point, defined in the paper as one whose removal raises the KSD
+of the remaining points the most. Removing point \code{a} lowers the double sum
+\eqn{\sum_{b,c} k0(x_b,x_c)} by
 \deqn{I_a = \sum_b K0_{ab} + \sum_b K0_{ba} - K0_{aa},}
-and starts at the point with the smallest \code{I_a}. A custom function can
-implement another rule while still using the same SP-MCMC main loop.
+and the remaining points share one divisor, so maximizing their KSD is the
+same as taking the smallest \code{I_a}, which is what the rule computes.
+\code{I_a} can be negative, and the most negative one marks the point
+contributing most to the current KSD. A custom function can implement
+another rule while still using the same SP-MCMC main loop.
 
-The returned object is a small strategy object: it stores a human-readable
-\code{label} and a \code{select(state)} function. \code{\link[=sp_mcmc]{sp_mcmc()}} uses that object at every
-iteration. This design keeps the choice of starting point independent of the
-MCMC transition and the candidate-scoring rule.
-
-The label is not just cosmetic. It is copied into the final \code{\link[=sp_mcmc]{sp_mcmc()}}
-output so that simulation results can record whether LAST, RAND, INFL, or a
-custom rule was used. The \code{select} function is the executable part of the
-rule. Splitting those two pieces lets a custom rule behave like the built-in
-rules in both computation and reporting.
+The result pairs a \code{select(state)} function with a \code{label} that \code{\link[=sp_mcmc]{sp_mcmc()}}
+copies into its output, so a run records whether LAST, RAND, INFL, or a
+custom rule produced it.
 }
 \examples{
 sp_mcmc_criterion("last")

@@ -13,37 +13,14 @@ rgmm(model = NULL, n = 100)
 }
 \value{
 For \code{model$d == 1}, a numeric vector of length \code{n}. For \code{model$d > 1}, an
-\verb{n x d} numeric matrix with one simulated observation per row. The different
-shape for one-dimensional mixtures keeps simple examples readable, while the
-package's validation helpers convert vectors back to \verb{n x 1} matrices when
-needed.
+\verb{n x d} numeric matrix with one observation per row.
 }
 \description{
-Draws independent observations from the mixture object returned by \code{\link[=gmm]{gmm()}}.
-For each observation, the function samples a component label using the model
-weights and then draws from that component's Gaussian distribution.
-}
-\details{
-This is the simulation counterpart of \code{\link[=likelihoodgmm]{likelihoodgmm()}} and
-\code{\link[=scorefunctiongmm]{scorefunctiongmm()}}. It is included so examples can generate data from the
-same mixture object used as a target model for Stein tests and samplers.
-
-The returned observations are independent draws from the mixture. The
-sampled component labels are used only internally; they are not returned
-because the public Stein routines work with observations and scores, not
-latent mixture labels. If labels are needed for a simulation study, reproduce
-the two-step sampling logic with the same \code{model$weights}, \code{model$mu}, and
-\code{model$sigma} fields.
-}
-\note{
-Multivariate sampling uses the package dependency \code{mvtnorm}.
+Draws independent observations from a \code{\link[=gmm]{gmm()}} object. For each observation,
+a component is sampled according to \code{model$weights}, followed by a Gaussian
+draw with that component's mean and covariance.
 }
 \examples{
-# Generate 100 samples from default gaussian mixture model
 model <- gmm()
 X <- rgmm(model)
-
-# Generate 300 samples from 3-d gaussian mixture model
-model <- gmm(d = 3)
-X <- rgmm(model, n = 300)
 }

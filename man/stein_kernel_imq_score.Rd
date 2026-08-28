@@ -16,9 +16,7 @@ stein_kernel_imq_score(alpha = 1, beta = -0.5, hess_log_p)
 \value{
 A list with class \code{"SteinKernel_imq_score"} and \code{"SteinKernel"}. It stores
 the IMQ parameters \code{alpha} and \code{beta} and the Hessian evaluator
-\code{hess_log_p}. These fields are kept together because evaluating this kernel
-requires the score-distance formula and the Hessian-based derivative terms;
-callers should pass the object to \code{\link[=stein_points]{stein_points()}}, \code{\link[=sp_mcmc]{sp_mcmc()}}, or
+\code{hess_log_p}. Pass the object to \code{\link[=stein_points]{stein_points()}}, \code{\link[=sp_mcmc]{sp_mcmc()}}, or
 \code{\link[=stein_kernel_matrix]{stein_kernel_matrix()}} rather than extracting the fields manually.
 }
 \description{
@@ -37,29 +35,20 @@ distance. This is a different design choice from the IMQ option in
 \code{\link[=stein_kernel]{stein_kernel()}}, which applies the IMQ kernel to \verb{||x - y||^2} or its
 preconditioned version.
 
-Because the base kernel depends on \eqn{s_p(x)}, its derivatives with respect to
-\code{x} depend on the Hessian of the target log density. The \code{hess_log_p}
+Because the base kernel depends on \eqn{s_p(x)}, its derivatives with respect
+to \code{x} depend on the Hessian of the target log density. The \code{hess_log_p}
 argument supplies that information. It should return an array whose first
 dimension indexes rows of \code{X} and whose remaining two dimensions contain the
 \verb{d x d} Hessian matrix for each row. The package uses those Hessians when
 computing \code{k0(x, y)} and the diagonal self-interaction terms used by
 \code{\link[=stein_points]{stein_points()}} and \code{\link[=sp_mcmc]{sp_mcmc()}}.
 
-This is the third Stein Points kernel family implemented here. It is parallel
-to the position-distance IMQ kernel from \code{\link[=stein_kernel]{stein_kernel()}} and the
-inverse-log kernel from \code{\link[=stein_kernel_inverse_log]{stein_kernel_inverse_log()}}, but it requires more
-target information. The top-level \code{\link[=stein_points]{stein_points()}} call still takes
-\code{score_function}, because the greedy objective needs scores at selected and
-candidate points. This constructor additionally needs \code{hess_log_p}, because
-differentiating \eqn{k(s_p(x), s_p(y))} with respect to point locations uses
-derivatives of the score field.
-
-This constructor is separate from \code{\link[=stein_kernel]{stein_kernel()}} because it requires a
-target-specific Hessian function, not only a kernel bandwidth or length
-scale. After construction it still behaves like a \code{SteinKernel} object, so
-\code{\link[=stein_kernel_matrix]{stein_kernel_matrix()}} dispatches to its complete score-aware method. This
-is also why it cannot be represented by \code{\link[=custom_stein_kernel]{custom_stein_kernel()}}, whose leaf
-functions receive point matrices but not target-score matrices.
+\code{\link[=stein_points]{stein_points()}} still takes \code{score_function} for the greedy objective;
+\code{hess_log_p} is needed in addition because differentiating
+\eqn{k(s_p(x), s_p(y))} with respect to point locations uses derivatives of
+the score field. That requirement is also why this kernel cannot be built
+with \code{\link[=custom_stein_kernel]{custom_stein_kernel()}}, whose leaf functions receive point matrices
+but not target-score matrices.
 }
 \examples{
 hess_log_p <- function(X) array(-1, dim = c(nrow(as.matrix(X)), 1, 1))

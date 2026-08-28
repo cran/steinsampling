@@ -2,7 +2,7 @@
 % Please edit documentation in R/ksd_v_test.R
 \name{ksd_v_test}
 \alias{ksd_v_test}
-\title{KSD goodness-of-fit test using the Chwialkowski et al. V-statistic}
+\title{KSD-V goodness-of-fit test with wild-bootstrap calibration}
 \usage{
 ksd_v_test(
   X,
@@ -19,108 +19,74 @@ ksd_v_test(
 )
 }
 \arguments{
-\item{X}{Numeric vector or matrix of samples.}
+\item{X}{Numeric vector or matrix containing \eqn{n} observations. Rows are
+observations and columns are coordinates; a vector is treated as an
+\eqn{n\times 1} matrix. For Markov calibration, rows must follow the
+dependence order.}
 
-\item{score_function}{Function returning the target score for each row of
-\code{X}.}
+\item{score_function}{Function that accepts the checked \eqn{n\times d}
+sample matrix and returns the \eqn{n\times d} matrix with row
+\eqn{s_p(X_i)^\top}.}
 
-\item{boot_method}{One of \code{"rademacher"} or \code{"markov"}.}
+\item{boot_method}{Calibration method: \code{"rademacher"} for independent
+observations or \code{"markov"} for ordered dependent observations.}
 
-\item{scaling}{Positive kernel scale. \code{NULL} uses the square of the exact
-all-pair median distance.}
+\item{scaling}{Positive squared scale passed to the kernel. For the built-in
+RBF and IMQ kernels this is, respectively, \eqn{h^2} and \eqn{c^2}.
+\code{NULL} uses the squared median pairwise distance.}
 
-\item{nboot}{Number of bootstrap samples.}
+\item{nboot}{Positive number of bootstrap draws \eqn{B}.}
 
-\item{change_prob}{Markov sign-flip probability used when
-\code{boot_method = "markov"}. It must be strictly between 0 and 1, supplied
-explicitly, and tuned with sample size; see Details. Use
-\code{boot_method = "rademacher"} for independent signs.}
+\item{change_prob}{Sign-change probability \eqn{a_n} for Markov calibration.
+It must be supplied and lie strictly between 0 and 1. It is ignored for
+Rademacher calibration.}
 
 \item{kernel}{Kernel choice: \code{"gaussian_rbf"}, \code{"imq"}, or a \code{SteinKernel}
-object, including objects created by \code{\link[=custom_stein_kernel]{custom_stein_kernel()}}.}
+object.}
 
-\item{return_raw_boot}{Logical; if \code{TRUE}, append raw bootstrap samples to
-the output.}
+\item{return_raw_boot}{Logical. If \code{TRUE}, include the \eqn{B} bootstrap
+draws in the result.}
 
-\item{block_size, block_threshold}{Options for computing large kernel
-matrices in blocks.}
+\item{block_size}{Positive number of rows per block. \code{NULL} uses
+\code{min(1024, n)} when \code{n > block_threshold} and \code{n} otherwise. Blocking
+changes memory use, not the test definition.}
 
-\item{imq_beta}{IMQ kernel exponent.}
+\item{block_threshold}{Positive sample-size threshold above which blockwise
+computation is used.}
+
+\item{imq_beta}{Finite exponent \eqn{\beta<0} of the built-in IMQ kernel.}
 }
 \value{
-An object of class \code{htest}, implemented as a list with:
-\itemize{
-\item \code{statistic}: one number labeled \code{ksd_v}; this is the observed scaled
-statistic \verb{n V_n}.
-\item \code{p.value}: right-tail wild-bootstrap p-value using the package's
-\code{(1 + exceedances) / (nboot + 1)} finite-bootstrap convention.
-\item \code{method}: text naming the bootstrap method and kernel.
-\item \code{data.name}: expression used for \code{X}.
-\item \code{parameter}: numeric vector containing \code{nboot}, the squared kernel
-\code{scaling} used, and \code{change_prob} when \code{boot_method = "markov"}.
-\item \code{bootstrap_samples}: present only when \code{return_raw_boot = TRUE}; numeric
-vector of wild-bootstrap statistics on the same \verb{n V_n} scale.
-}
-
-The \code{htest} shape behaves like a standard R test; \code{parameter} records the
-bootstrap and kernel choices because both affect the simulated null.
+An \code{htest} object. \code{statistic} is \eqn{nV_n}; \code{p.value} is the bootstrap
+p-value above. If \code{return_raw_boot = TRUE}, \code{bootstrap_samples} contains
+\eqn{nV_n^{*(1)},\ldots,nV_n^{*(B)}}.
 }
 \description{
-Runs the Kernel Stein Discrepancy goodness-of-fit test in the V-statistic
-form used by Chwialkowski et al. (2016). It compares samples with a target
-distribution through the target score and uses a wild bootstrap to approximate
-the null distribution.
+Tests observations against a target distribution specified by its score
+function. Use Rademacher calibration for independent observations and
+Markov calibration for ordered dependent observations.
 }
 \details{
-Let \code{p} be the target density, \eqn{s_p(x)=\nabla_x\log p(x)} its score, and
-\code{k0(x,y)} the Stein kernel built from that score and the selected base kernel;
-the normalizing constant of \code{p} is unnecessary. See
-\code{\link[=stein_kernel_matrix]{stein_kernel_matrix()}} for the four terms in \code{k0}.
+Let \eqn{s_p(x)=\nabla_x\log p(x)} and
+\deqn{K_{ij}=k_{0,p}(X_i,X_j),}
+where \eqn{k_{0,p}} is defined in \code{\link[=stein_kernel_matrix]{stein_kernel_matrix()}}. The test uses
+\deqn{V_n=\frac{1}{n^2}\sum_{i=1}^n\sum_{j=1}^nK_{ij},\qquad
+nV_n=\frac{1}{n}\sum_{i=1}^n\sum_{j=1}^nK_{ij}.}
+The diagonal is retained. For a positive-definite base kernel, \eqn{V_n} is
+nonnegative but upward biased for the population squared KSD.
 
-Rows of \code{X} are samples, and \code{score_function(X)} must return one score vector
-per row. With \code{scaling = NULL}, \code{\link[=find_median_distance]{find_median_distance()}} uses all pairs to
-return a squared median distance: \code{h^2} for RBF or \code{c^2} for IMQ. This package
-default is not prescribed by Chwialkowski et al. and costs quadratic time and
-memory, so large samples should provide \code{scaling}. For a preconditioned RBF
-object without fixed bandwidth, the rule uses preconditioned distances and
-retains that preconditioner.
+\code{boot_method = "rademacher"} uses independent signs and is intended for
+independent observations. \code{boot_method = "markov"} uses correlated signs
+and requires rows of \code{X} to be in dependence order. The latter calibration
+requires the dependence, moment, and kernel conditions of the wild-bootstrap
+result; this function cannot verify them. Asymptotically, the sign-change
+probabilities \eqn{a_n} must satisfy \eqn{a_n\to0} and
+\eqn{na_n\to\infty}.
 
-For observations \eqn{x_1,\ldots,x_n}, this test uses
-\deqn{n V_n = \frac{1}{n} \sum_{i=1}^n \sum_{j=1}^n k0(x_i, x_j).}
-Some papers instead write
-\eqn{V_n = n^{-2} \sum_{i,j} k0(x_i, x_j)}. This package reports and
-bootstraps scaled \verb{n V_n}, the form compared with the wild-bootstrap
-distribution, and includes \code{k0(x_i,x_i)} unlike \code{\link[=ksd_u_test]{ksd_u_test()}}.
-
-The algorithm (1) builds the full Stein-kernel matrix including its diagonal,
-(2) computes scaled \verb{n V_n}, (3) generates wild-bootstrap signs, and (4)
-recomputes the quadratic form with those signs. Independent samples use
-independent Rademacher signs. Chwialkowski et al.'s dependent-sample result
-requires more than ordered rows: a stationary tau-mixing process satisfying
-\deqn{\sum_{t=1}^{\infty} t^2 \sqrt{\tau(t)} < \infty,}
-Lipschitz \code{k0}, and \eqn{E[k0(Z,Z)^2]<\infty}. Geometrically ergodic Markov
-chains meet the mixing requirement only under additional moment assumptions.
-
-Markov signs form a two-state chain that switches between neighboring
-observations with probability \code{change_prob}. Asymptotically the paper uses
-\eqn{p_n=1/w_n}, where \eqn{w_n\to\infty} and \eqn{w_n=o(n)}, equivalently
-\eqn{p_n\to0} and \eqn{np_n\to\infty}. Thus \code{change_prob} depends on sample
-size and dependence strength. \code{0.5} yields independent signs--the paper's
-i.i.d. setting--and can miscalibrate dependent rows. Large positive values
-indicate disagreement with the target score.
-
-The package reports
-\deqn{\frac{1 + \#\{b:T_b \ge T_{obs}\}}{B+1}.}
-Chwialkowski et al. state their decision through the empirical bootstrap
-quantile. The observed and bootstrap statistics follow the paper, but this
-corrected finite-simulation p-value adds no finite-sample validity guarantee
-for dependent data.
-
-Like \code{\link[=ksd_u_test]{ksd_u_test()}}, this function starts from \code{X}, \code{score_function}, and a
-Stein kernel. The U version is off-diagonal and uses centered multinomial
-weights; this V version keeps self-interactions, reports \verb{n V_n}, and uses
-wild signs. Its lower-level pieces are \code{\link[=ksd_vq_matrix]{ksd_vq_matrix()}},
-\code{\link[=ksd_v_statistic]{ksd_v_statistic()}}, and \code{\link[=ksd_v_bootstrap]{ksd_v_bootstrap()}}.
+If \eqn{nV_n^{*(1)},\ldots,nV_n^{*(B)}} are the bootstrap draws, the
+reported right-tail p-value is
+\deqn{\widehat p=\frac{1+\sum_{b=1}^B
+\mathbf{1}\{nV_n^{*(b)}\ge nV_n\}}{B+1}.}
 }
 \examples{
 X <- matrix(rnorm(20), ncol = 1)

@@ -2,7 +2,7 @@
 % Please edit documentation in R/stein_thinning.R
 \name{stein_thinning}
 \alias{stein_thinning}
-\title{Compress existing samples with Stein thinning}
+\title{Select existing samples by Stein thinning}
 \usage{
 stein_thinning(
   X,
@@ -18,106 +18,93 @@ stein_thinning(
 )
 }
 \arguments{
-\item{X}{Numeric matrix with samples in rows.}
+\item{X}{Finite numeric vector or matrix containing \eqn{n} existing
+samples. Rows are samples and columns are coordinates; a vector is treated
+as an \eqn{n\times1} matrix.}
 
-\item{S}{Optional score matrix with the same shape as \code{X}.}
+\item{S}{Optional finite numeric \eqn{n\times d} score matrix with row
+\eqn{s_p(z_i)^\top}. Supply \code{S} or \code{score_function}.}
 
-\item{m}{Positive integer number of points to select. The default
-\code{pre = "sclmed"} additionally requires \code{m > 1}.}
+\item{m}{Positive integer number of indices to select. Repetition is
+allowed, so \code{m} may exceed \eqn{n}. The default \code{"sclmed"} rule requires
+\code{m > 1}.}
 
-\item{score_function}{Optional \verb{function(X)} returning scores.}
+\item{score_function}{Optional function that accepts \code{X} and returns an
+\eqn{n\times d} score matrix. When supplied, its result is used instead of
+\code{S}.}
 
-\item{pre}{Preconditioning rule:
-\code{"sclmed"}, \code{"med"}, or \code{"smpcov"}.}
+\item{pre}{Preconditioning rule: \code{"sclmed"}, \code{"med"}, or \code{"smpcov"}.}
 
-\item{kernel}{\code{"imq"} (default), \code{"gaussian_rbf"}, or a \code{SteinKernel}
-object, including objects made by \code{\link[=custom_stein_kernel]{custom_stein_kernel()}}. A supplied
-Gaussian RBF object must have a fixed positive bandwidth \code{h}; Stein
-thinning uses one fixed kernel throughout Algorithm 1.}
+\item{kernel}{Either \code{"imq"}, \code{"gaussian_rbf"}, or a \code{SteinKernel} object.
+The default is \code{"imq"}. A supplied Gaussian RBF object must have a fixed
+positive bandwidth.}
 
-\item{pre_subsample}{Maximum number of rows used for median-based scaling,
-or a vector of row indices to use directly.}
+\item{pre_subsample}{For \code{"med"} and \code{"sclmed"}, either a positive integer
+giving the maximum number of rows used to estimate \eqn{\rho}, \code{Inf} for
+all rows, or an explicit vector of row indices. Ignored for \code{"smpcov"}.}
 
-\item{pre_subsample_method}{How to choose rows when \code{pre_subsample} is a
-scalar: \code{"first"}, \code{"even"}, or \code{"random"}.}
+\item{pre_subsample_method}{Row-selection method used when \code{pre_subsample}
+is scalar: \code{"first"}, \code{"even"}, or \code{"random"}.}
 
-\item{verbose_rbf_warning}{Warn when using RBF instead of the usual IMQ
-Stein thinning default.}
+\item{verbose_rbf_warning}{Logical; when \code{TRUE} (the default), supplying a
+Gaussian RBF kernel warns that Riabiz et al. (2022) use IMQ as the Stein
+thinning default. Set \code{FALSE} to silence it.}
 
-\item{...}{Kernel parameters forwarded to \code{\link[=stein_kernel]{stein_kernel()}}, such as \code{c},
-\code{beta}, \code{h}, \code{sigma}, or \code{sigma2} for RBF.}
+\item{...}{Kernel parameters used when \code{kernel} is a character string: \code{c}
+and \code{beta} for IMQ, or \code{h} and \code{sigma} for Gaussian RBF. The compatibility
+argument \code{sigma2} is also accepted for RBF when neither \code{h} nor \code{sigma} is
+supplied.}
 }
 \value{
-Length-\code{m} integer vector of one-based row indices in selection order. It is
-unsorted and may repeat; \code{X[idx, , drop = FALSE]} is the thinned sample, with
-repeats representing repeated support points in the empirical measure.
+Integer vector \eqn{(\pi(1),\ldots,\pi(m))} containing one-based row indices
+in selection order. It is not sorted and may contain repeated indices. The
+selected sample is \code{X[idx, , drop = FALSE]}.
 }
 \description{
-Implements Algorithm 1 of Riabiz et al. (2022). Given an existing MCMC output
-\code{X}, the function returns \code{m} row indices that define a compressed empirical
-measure with small kernel Stein discrepancy with respect to the target score.
+Selects an ordered sequence of row indices from an existing sample using the
+greedy Stein-thinning criterion of Riabiz et al. (2022). The function does
+not simulate or move sample points.
 }
 \details{
-Stein thinning post-processes rows \verb{X[1, ],...,X[n, ]} already produced by a
-sampler: it neither simulates a chain, moves particles, nor optimizes over
-continuous space. It returns indices for subsetting those rows. Score matrix
-\code{S} must match \code{X}, with row \code{S[i, ]} equal to
-\eqn{s_p(X[i,])=\nabla_x\log p(x)|_{x=X[i,]}}. Alternatively,
-\code{score_function} is evaluated once to create \code{S}; the Stein kernel \code{k0} then
-uses these scores between rows of \code{X}.
+Let rows of \code{X} be \eqn{z_1^\top,\ldots,z_n^\top} and
+\deqn{K_{ab}=k_{0,p}(z_a,z_b).}
+Scores may be supplied through \code{S} or computed once using \code{score_function}.
+If the first \eqn{j-1} selected indices are
+\eqn{\pi(1),\ldots,\pi(j-1)}, the next index is
+\deqn{\pi(j)\in\operatorname*{arg\,min}_{i\in\{1,\ldots,n\}}
+\left\{K_{ii}+2\sum_{\ell=1}^{j-1}K_{\pi(\ell),i}\right\}.}
+The implementation stores one half of this objective,
+\deqn{\frac12K_{ii}+\sum_{\ell=1}^{j-1}K_{\pi(\ell),i},}
+which has the same minimizer. Each step adds one Stein-kernel row to the
+running objective, giving selection cost \eqn{O(nmd)} after the initial
+diagonal calculation.
 
-Starting from an empty sequence, after selecting
-\eqn{s_1,\ldots,s_{j-1}} the method minimizes
-\deqn{
-\frac{1}{2} k0(x_i, x_i) +
-\sum_{l=1}^{j-1} k0(x_{s_l}, x_i).
-}
-Although algebraically shaped like the marginal KSD decrease in greedy Stein
-Points, this selects indices from fixed support
-\eqn{\{x_1,\ldots,x_n\}} rather than generating locations. For returned
-\eqn{idx=(s_1,\ldots,s_m)}, the diagnostic is
-\deqn{KSD_m^2 = \frac{1}{m^2}
-       \sum_{a=1}^m \sum_{b=1}^m k0(x_{s_a}, x_{s_b}).}
-Each selected row's interactions are added to a running objective, equivalent
-to recomputing the sum but avoiding that work. If several rows have the same
-smallest value, the code takes the first one; the paper says any one may be
-used. Indices form a sequence, not necessarily a set: rows may
-repeat when this best lowers the objective.
+Ties use the first minimum. An index may be selected more than once, so \code{m}
+may exceed \eqn{n}; repeated indices represent repeated mass on the
+corresponding input rows.
 
-The integer vector directly represents the paper's support points and
-multiplicities: use \code{X[idx, , drop = FALSE]} and
-\code{S[idx, , drop = FALSE]}. A repeated index unambiguously gives the same
-original support point repeated mass.
+Let \eqn{M=\texttt{precon}} and
+\deqn{r_M(x,y)=(x-y)^\top M(x-y).}
+For the median rules, let \eqn{\rho} be the median pairwise Euclidean
+distance among the rows selected by \code{pre_subsample}. The rules are
+\deqn{M_{\mathrm{med}}=\frac{1}{\rho^2}I,\qquad
+M_{\mathrm{sclmed}}=\frac{\log(m)}{\rho^2}I,\qquad
+M_{\mathrm{smpcov}}=\widehat{\operatorname{Cov}}(X)^{-1}.}
+The default \code{"sclmed"} requires \eqn{m>1}. Both median rules require at
+least two preconditioning rows. If \eqn{\rho=0}, the package replaces
+\eqn{\rho^2} by 1 and warns. \code{"smpcov"} uses all rows and requires a
+nonsingular empirical covariance matrix.
 
-Thus this is compression, not another point generator. It shares the kernel
-layer with \code{\link[=stein_points]{stein_points()}} and \code{\link[=sp_mcmc]{sp_mcmc()}}, but those methods propose new
-locations; Stein thinning keeps a short indexed subsequence of an existing,
-typically MCMC-produced support set.
+When \code{pre_subsample} is scalar, \code{"first"}, \code{"even"}, and \code{"random"} use
+initial, evenly spaced, and randomly sampled rows. An explicit vector of row
+indices is used directly.
 
-Built-in kernels receive the paper's positive definite preconditioner \code{M}
-directly in
-\deqn{r(x, y) = (x - y)^T M (x - y).}
-If \code{med2} is the median squared Euclidean distance in the chosen
-preconditioning subsample, \code{"med"} uses
-\deqn{M = I / med2.}
-For zero median the paper recommends a positive exception such as length
-scale \code{ell = 1}; accordingly, the implementation warns and replaces
-\code{med2 = 0} by \code{1}. This remains positive definite but is no longer
-data-adaptive; zero commonly indicates repeated states or poor MCMC mixing
-and should be diagnosed, not treated as a successful estimate.
-
-The paper's default scaled-median rule, \code{"sclmed"}, is
-\deqn{M = \log(m) I / med2,}
-equivalent to \eqn{\Gamma=\ell^2I},
-\eqn{\ell=med/\sqrt{\log(m)}} and \eqn{M=\Gamma^{-1}}. This rule requires
-\code{m > 1}. It heuristically balances aggregate kernel interactions, but changes
-the kernel with \code{m}; Riabiz et al. therefore state that their preceding
-fixed-kernel theory does not cover \code{"sclmed"}.
-
-For both median rules, unaffected consistency assumes a fixed \code{n0} MCMC
-states construct the preconditioner. \code{pre_subsample} controls this here;
-using all rows or letting its size grow lies outside that statement.
-\code{"smpcov"} uses the inverse empirical covariance of \code{X}.
+The default base kernel is
+\deqn{k(x,y)=\{1+r_M(x,y)\}^{-1/2}.}
+A Gaussian RBF kernel is supported but must have a fixed positive bandwidth;
+by default its use produces a warning. For supplied built-in RBF or IMQ
+objects, \code{pre} replaces the object's existing preconditioner. Custom
+callbacks may use the \code{precon} argument passed by Stein thinning.
 }
 \examples{
 X <- matrix(rnorm(6), ncol = 1)

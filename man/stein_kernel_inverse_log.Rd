@@ -12,12 +12,7 @@ stein_kernel_inverse_log(alpha = 1, beta = -1)
 \item{beta}{Negative exponent.}
 }
 \value{
-A list with class \code{"SteinKernel_inverse_log"} and \code{"SteinKernel"}. It stores
-\code{alpha} and \code{beta}, which are the only parameters needed by the S3 methods
-for \code{eval_kernel()}, \code{grad_x_kernel()}, \code{trace_mixed_kernel()}, and
-\code{cross_kernel()}. Returning the parameters in a kernel object, instead of
-returning only a function, lets the rest of the package evaluate the base
-kernel and all Stein-kernel derivative terms consistently.
+A \code{SteinKernel} object for the inverse-log kernel.
 }
 \description{
 Creates the inverse-log base kernel used in the Stein Points experiments and
@@ -33,26 +28,12 @@ more slowly as points move apart. That slower decay is useful in the Stein
 Points setting because the greedy objective needs to see interactions
 between already selected points and candidates that may be far away.
 
-This constructor is parallel to \code{\link[=stein_kernel]{stein_kernel()}}, but it is kept separate
-because the inverse-log kernel is mainly part of the Stein Points paper's
-specialized kernel family. Once constructed, the object still follows the
-same \code{SteinKernel} interface: \code{\link[=stein_points]{stein_points()}}, \code{\link[=stein_codescent]{stein_codescent()}},
-\code{\link[=stein_kernel_matrix]{stein_kernel_matrix()}}, and the kernel generics can call the corresponding
-S3 methods without knowing that the kernel came from this constructor.
-
-The squared distance in the formula is the ordinary Euclidean squared
-distance between sample rows. Unlike the built-in IMQ constructor in
-\code{\link[=stein_kernel]{stein_kernel()}}, this helper does not expose a preconditioning matrix; it is
-intended to reproduce the position-distance inverse-log kernel used in the
-Stein Points experiments.
-
-This is the second of the three Stein Points kernel choices implemented in
-the package. The first is the position-distance IMQ kernel from
-\code{\link[=stein_kernel]{stein_kernel()}}, with formula \code{(c^2 + r(x, y))^beta}. The third is
-\code{\link[=stein_kernel_imq_score]{stein_kernel_imq_score()}}, which replaces position distance by score-vector
-distance and therefore needs Hessians. Moving from IMQ to inverse-log keeps
-the same required inputs for \code{\link[=stein_points]{stein_points()}} and \code{\link[=sp_mcmc]{sp_mcmc()}}: points,
-scores, and the kernel object. Only the base-kernel formula changes.
+The squared distance is the ordinary Euclidean one between sample rows.
+Unlike the IMQ constructor in \code{\link[=stein_kernel]{stein_kernel()}}, this helper exposes no
+preconditioning matrix; it reproduces the position-distance inverse-log
+kernel of the Stein Points experiments. The result is an ordinary
+\code{SteinKernel}, so \code{\link[=stein_points]{stein_points()}} and \code{\link[=sp_mcmc]{sp_mcmc()}} need the same inputs as
+for any other kernel: points, scores, and the kernel object.
 }
 \examples{
 stein_kernel_inverse_log(alpha = 1, beta = -1)

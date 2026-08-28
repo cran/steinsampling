@@ -29,13 +29,13 @@ sp_mcmc_eval_candidates(
 \value{
 A list with:
 \itemize{
-\item \code{f_vec}: doubled greedy objective value for each candidate row. The row
-with the smallest value is the point \code{\link[=sp_mcmc]{sp_mcmc()}} appends.
-\item \code{D_new}: score matrix for the candidate rows, either reused from \code{cand_D}
+\item \code{objective_values}: doubled greedy objective value for each candidate row.
+The row with the smallest value is the point \code{\link[=sp_mcmc]{sp_mcmc()}} appends.
+\item \code{scores}: score matrix for the candidate rows, either reused from \code{cand_D}
 or computed from \code{score_function}; it is returned so the selected row can
 be appended without another score call.
-\item \code{score_eval}: number of candidate score evaluations performed inside this
-helper.
+\item \code{score_evaluations}: number of candidate score evaluations performed inside
+this helper.
 }
 }
 \description{
@@ -48,16 +48,11 @@ For each candidate \code{x}, the objective in the paper is
 in the notation of the Stein Points paper. This helper returns the doubled
 equivalent
 \deqn{k0(x, x) + 2 \sum_i k0(x_i, x),}
-where the sum runs over rows in \code{X_curr}. The returned \code{f_vec} contains one
+where the sum runs over rows in \code{X_curr}. \code{objective_values} contains one
 objective value per candidate row, in the same order as \code{cand_X}. If the MCMC
 transition already returned candidate scores, pass them as \code{cand_D};
 otherwise this helper evaluates \code{score_function} on the candidate rows and
 records how many score evaluations were needed.
-
-This function is the bridge between the MCMC transition and the Stein Points
-objective. MCMC proposes a finite candidate set; this helper evaluates those
-candidates using the current Stein Points objective and returns the pieces
-needed for \code{\link[=sp_mcmc]{sp_mcmc()}} to append the best one.
 }
 \examples{
 score <- function(X) -as.matrix(X)

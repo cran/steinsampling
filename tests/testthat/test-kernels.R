@@ -71,6 +71,7 @@ test_that("custom Stein kernels satisfy the generic shape contract", {
   S <- normal_score(X)
 
   expect_s3_class(kernel, "SteinKernel_custom")
+  expect_identical(kernel$custom_grad_mode, "numeric")
   expect_equal(dim(eval_kernel(kernel, X)), c(3L, 3L))
   expect_equal(dim(grad_x_kernel(kernel, X)), c(3L, 3L, 1L))
   expect_equal(dim(trace_mixed_kernel(kernel, X)), c(3L, 3L))
@@ -81,6 +82,22 @@ test_that("custom Stein kernels satisfy the generic shape contract", {
     stein_kernel_matrix(stein_kernel(type = "gaussian_rbf", h = 1), X, S)
   )
   expect_length(grad_theta_v_kernel(kernel, X, 0, S, matrix(1, 3, 1))$grad_vj, 1L)
+
+  # A custom kernel's `grad_param` is ignored, not validated.
+  with_param <- custom_stein_kernel(
+    eval_fn, grad_fn, trace_fn,
+    grad_theta_v_fn = function(X, vj, grads_X, g_block, obj) {
+      list(grad_vj = rep(1, ncol(X)), grad_param = NaN)
+    }
+  )
+  expect_identical(
+    grad_theta_v_kernel(with_param, X, 0, S, matrix(1, 3, 1))$grad_param, 0
+  )
+
+  expect_error(
+    custom_stein_kernel(eval_fn, grad_fn, trace_fn, custom_grad_mode = "error"),
+    "should be one of"
+  )
 })
 
 test_that("score-distance IMQ exposes the public Stein matrix method", {
@@ -205,5 +222,67 @@ test_that("kernel contracts reject bad gradients and missing custom gradients", 
   expect_error(
     grad_theta_v_kernel(custom_no_opt_grad, X, 0, normal_score(X), matrix(1, nrow(X), 1)),
     "requires grad_theta_v_fn"
+  )
+})
+
+test_that("closed-form k0_diag matches the general Stein-matrix diagonal", {
+  set.seed(404)
+  X <- matrix(rnorm(12), ncol = 2L)
+  S <- -X
+  M <- matrix(c(2, 0.4, 0.4, 1.5), 2L, 2L)
+  hess <- function(Z) {
+    Z <- as.matrix(Z)
+    array(rep(c(-1, 0.3, 0.3, -2), each = nrow(Z)), dim = c(nrow(Z), 2L, 2L))
+  }
+
+  kernels <- list(
+    rbf = stein_kernel(type = "gaussian_rbf", h = 0.8),
+    rbf_precon = stein_kernel(type = "gaussian_rbf", h = 0.8, precon = M),
+    imq = stein_kernel(type = "imq", c = 1.3, beta = -0.4),
+    imq_precon = stein_kernel(type = "imq", c = 1.3, beta = -0.4, precon = M),
+    inverse_log = stein_kernel_inverse_log(alpha = 1.2, beta = -1),
+    imq_score = stein_kernel_imq_score(alpha = 1.1, beta = -0.5, hess_log_p = hess)
+  )
+
+  for (name in names(kernels)) {
+    kernel <- kernels[[name]]
+    expect_equal(
+      as.numeric(steinsampling:::k0_diag(kernel, X, S)),
+      diag(stein_kernel_matrix(kernel, X, S)),
+      info = name
+    )
+  }
+})
+
+test_that("k0_diag falls back without forming the full pairwise matrix", {
+  set.seed(405)
+  X <- matrix(rnorm(8), ncol = 2L)
+  S <- -X
+  reference <- stein_kernel(type = "gaussian_rbf", h = 1)
+  expected <- diag(stein_kernel_matrix(reference, X, S))
+
+  # Without k0_diag, the shared fallback evaluates one row at a time.
+  eval_fn <- function(X, Y = NULL, precon = NULL) {
+    eval_kernel(reference, X, Y)
+  }
+  grad_fn <- function(X, Y = NULL, precon = NULL) grad_x_kernel(reference, X, Y)
+  trace_fn <- function(X, Y = NULL, precon = NULL) {
+    trace_mixed_kernel(reference, X, Y)
+  }
+  custom <- custom_stein_kernel(eval_fn, grad_fn, trace_fn)
+  expect_equal(
+    as.numeric(steinsampling:::k0_diag(custom, X, S)), expected
+  )
+
+  # Function- and list-form kernels go through the `.k0_diag()` adapter.
+  fn_kernel <- function(X, S_X, Y, S_Y) {
+    stein_kernel_matrix(reference, X, S_X, Y, S_Y)
+  }
+  expect_equal(
+    as.numeric(steinsampling:::.k0_diag(fn_kernel, X, S)), expected
+  )
+  expect_equal(
+    as.numeric(steinsampling:::.k0_diag(list(k0_matrix = fn_kernel), X, S)),
+    expected
   )
 })

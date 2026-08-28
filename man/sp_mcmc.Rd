@@ -2,7 +2,7 @@
 % Please edit documentation in R/stein_point_mcmc.R
 \name{sp_mcmc}
 \alias{sp_mcmc}
-\title{Generate Stein Points from short MCMC candidate paths}
+\title{Select Stein Points from short Markov chains}
 \usage{
 sp_mcmc(
   score_function,
@@ -10,140 +10,128 @@ sp_mcmc(
   kernel,
   n_points,
   d,
-  mcmc = c("grw", "mala", "rwm"),
+  mcmc = c("rwm", "mala"),
   criterion = c("last", "rand", "infl"),
   m_seq,
-  h = NULL,
+  h,
   Sigma = NULL,
   x_init,
   seed = NULL,
   transition_fn = NULL,
   proposal_fn = NULL,
-  n_eval_fn = NULL,
   criterion_args = list()
 )
 }
 \arguments{
-\item{score_function}{Function returning target scores for sample rows.}
+\item{score_function}{Function taking an \verb{n x d} matrix and returning the
+corresponding \verb{n x d} matrix of target scores.}
 
-\item{log_p}{Function returning log density values for sample rows.}
+\item{log_p}{Function taking an \verb{n x d} matrix and returning \code{n} log-density
+values.}
 
-\item{kernel}{A \code{\link[=stein_kernel]{stein_kernel()}} object, compatible kernel function, or list
-with a \code{k0_matrix} function. A Gaussian RBF kernel must have a fixed
-positive bandwidth \code{h}; SP-MCMC evaluates one fixed Stein kernel across
-all short candidate paths.}
+\item{kernel}{Kernel used to construct \eqn{k_{0,p}}. It may be a built-in
+kernel object, a compatible kernel function, or a list with \code{k0_matrix}.
+A Gaussian RBF kernel must use a fixed positive bandwidth.}
 
-\item{n_points}{Total number of points to generate.}
+\item{n_points}{Positive total number of points, including \code{x_init}.}
 
-\item{d}{State dimension.}
+\item{d}{Positive state dimension.}
 
-\item{mcmc}{MCMC transition: \code{"grw"} for Gaussian random-walk Metropolis,
-\code{"mala"} for MALA, or alias \code{"rwm"}.}
+\item{mcmc}{MCMC transition: \code{"rwm"} for Gaussian random-walk Metropolis or
+\code{"mala"} for MALA.}
 
 \item{criterion}{Rule for choosing where the next MCMC chain starts:
 \code{"last"}, \code{"rand"}, \code{"infl"}, or a custom function.}
 
-\item{m_seq}{Number of Markov transitions, and hence candidates before
-duplicate removal, at each selection step. Supply one value, one value per
-point, or one value per update after the first point.}
+\item{m_seq}{Number of path states before duplicate removal. Supply one value
+for all steps, one value per selected point, or one value for each step
+after the first point.}
 
-\item{h}{Step-size multiplier used by the built-in MCMC transitions.}
+\item{h}{Step-size multiplier used by the built-in MCMC transitions. Both
+transitions give the proposal noise covariance \code{h * Sigma}.}
 
-\item{Sigma}{Symmetric positive-definite proposal covariance or
-preconditioning matrix. If \code{NULL}, the identity matrix is used.}
+\item{Sigma}{Symmetric positive-definite proposal preconditioner shared by
+the drift and the noise of \code{\link[=mala]{mala()}}, and the proposal covariance scale of
+\code{\link[=rwm]{rwm()}}. If \code{NULL}, the identity matrix is used. This is the target-scale
+matrix itself, not its inverse; the \code{precon} matrix of an IMQ
+\code{\link[=stein_kernel]{stein_kernel()}} is the inverse, so preconditioning both the transition
+and \code{k0} with the same covariance \code{S} means \code{Sigma = S} and
+\code{precon = solve(S)}.}
 
-\item{x_init}{Fixed first point.}
+\item{x_init}{Finite numeric vector of length \code{d} giving the first point.}
 
 \item{seed}{Optional RNG seed.}
 
 \item{transition_fn}{Optional custom MCMC transition function. It receives
 the log density, score function, current state, step size, proposal matrix,
-and a requested row count of \code{m_seq[j] + 1}. It must return exactly that
-many rows in \code{X}, with the supplied current state in row 1. The remaining
-\code{m_seq[j]} rows are states after successive Markov transitions.}
+and a requested row count \eqn{\nu_j}. It must return a list with exactly
+that many rows in \code{X}, the supplied current state in row 1, \code{D} set to a
+matching score matrix or explicitly to \code{NULL}, and \code{counts} containing
+\code{log_p}, \code{score}, and their sum \code{total}. The remaining \eqn{\nu_j-1} rows
+are states after successive Markov transitions.}
 
 \item{proposal_fn}{Optional function that changes \code{h} or \code{Sigma} at each
 step. It should return a list containing replacement \code{h} and/or \code{Sigma}.}
 
-\item{n_eval_fn}{Optional function that overrides the per-step evaluation
-count.}
-
-\item{criterion_args}{optional list of extra arguments passed to a custom
+\item{criterion_args}{Optional list of extra arguments passed to a custom
 \code{criterion} function.}
 }
 \value{
-A list of class \code{"sp_mcmc"} and \code{"stein_points"} with:
+An object of class \code{"sp_mcmc"} with:
 \itemize{
-\item \code{X}: \verb{n_points x d} matrix of selected point locations.
-\item \code{D}: target scores at the selected points.
-\item \code{ksd}: running KSD diagnostic after each selected point, with \code{ksd[j]}
-equal to the square root of the empirical double average of \code{k0} over the
-first \code{j} selected rows.
-\item \code{n_eval}, \code{cum_n_eval}: per-step and cumulative evaluation counts.
-\item \code{counts}: matrix splitting each step's count into \code{log_p}, \code{score},
-\code{candidate_score}, \code{transition_total}, and \code{total}.
-\item \code{method}, \code{kernel}, \code{mcmc}, \code{criterion}, \code{m_seq}, \code{h}, \code{Sigma}: algorithm
-settings used for the run.
-\item \code{selected_index}: index of the previously selected point used to start
-each short chain. This records the output of the LAST/RAND/INFL or custom
-start rule before the MCMC transition is run.
-\item \code{chain_d2_max}, \code{chain_d2_selected}, \code{chain_d2_last}: squared Euclidean
-distances from the chain start to the farthest candidate, selected
-candidate, and last candidate. \code{chain_d2_first_last} is the squared
-distance between the first and last candidates, as used in Figure 2 of the
-SP-MCMC paper.
-\item \code{accept_rate}: Metropolis acceptance rate for each short chain, useful for
-interpreting whether poor point choices came from the Stein objective or
-from a candidate chain that barely moved.
+\item \code{X} and \code{D}: \verb{n_points x d} matrices of selected points and their scores.
+\item \code{ksd}: running discrepancy defined above.
+\item \code{n_eval}, \code{cum_n_eval}, and \code{counts}: per-step, cumulative, and component
+evaluation counts.
+\item \code{selected_index}: row used to initialize each short path.
+\item \code{chain_d2_max}, \code{chain_d2_selected}, \code{chain_d2_last}, and \code{accept_rate}:
+short-path movement and acceptance summaries.
+\item \code{kernel}, \code{mcmc}, \code{criterion}, \code{m_seq}, \code{h}, and \code{Sigma}: settings used by
+the run.
+\item \code{call}: matched function call.
 }
 }
 \description{
-Implements Stein Point Markov Chain Monte Carlo (SP-MCMC). At each Stein
-Points step, the algorithm runs a short MCMC chain to produce a manageable
-candidate set, then appends the candidate that most reduces the greedy KSD
-objective.
+Builds a point set sequentially. At each step, a short Markov chain produces
+the candidates, and the candidate minimizing the greedy Stein objective is
+selected.
 }
 \details{
-SP-MCMC replaces Stein Points' global state-space search by a short Markov
-chain. At step \code{j} it starts from an already selected point, makes
-\code{m_seq[j]} Markov transitions, removes duplicate states among the resulting
-\code{m_seq[j]} candidates, and scores each remaining candidate with the greedy
-objective. The initial state is not a candidate. With target score
-\eqn{s_p(x)=\nabla_x\log p(x)} and the \code{k0} from
-\code{\link[=stein_kernel_matrix]{stein_kernel_matrix()}}, the prefix diagnostic is
-\deqn{KSD_m^2 = \frac{1}{m^2}
-       \sum_{a=1}^m \sum_{b=1}^m k0(x_a,x_b).}
-The paper minimizes
-\deqn{\frac{1}{2} k0(x, x) + \sum_{i=1}^{j-1} k0(x_i, x).}
-The equivalent implementation form is
-\deqn{k0(x, x) + 2 \sum_{i=1}^{j-1} k0(x_i, x),}
-whose smallest candidate is appended.
+Let \eqn{k_{0,p}} be the Stein kernel formed from \code{kernel} and
+\eqn{s_p(x)=\nabla_x\log p(x)}. Given selected points
+\eqn{x_1,\ldots,x_{j-1}}, define
+\deqn{Q_j(x)=\frac{1}{2}k_{0,p}(x,x)
+      +\sum_{i=1}^{j-1}k_{0,p}(x_i,x).}
+At step \eqn{j}, the function generates a Markov-chain path
+\eqn{Y_{j,1},\ldots,Y_{j,\nu_j}}, removes duplicate states, and selects
+\deqn{x_j\in\mathop{\mathrm{argmin}}_{x\in\mathcal C_j}Q_j(x),}
+where \eqn{\mathcal C_j} is the remaining candidate set. Thus
+\code{\link[=stein_points]{stein_points()}} and \code{sp_mcmc()} use the same greedy objective; they differ
+in how candidates are obtained.
 
-\code{x_init} fixes the first point, leaving \code{n_points - 1} short chains. Scalar
-\code{m_seq} is recycled; a length-\code{n_points - 1} vector supplies each subsequent
-length. Built-in transitions return states, log densities, acceptance
-indicators, and reusable MALA scores. A cached
-\code{K0[a,b]=k0(x_a,x_b)} lets start rules, candidate scores, and KSD diagnostics
-share selected-point interactions.
+The first path state is chosen from the previously selected points.
+\code{criterion = "last"} uses the latest point, \code{"rand"} samples a selected
+point, and \code{"infl"} uses the point whose removal gives the largest
+remaining-set discrepancy. A path of length \eqn{\nu_j} makes
+\eqn{\nu_j-1} transitions. Therefore \code{m_seq = 1} supplies only the starting
+state and performs no search.
 
-Start rules are \code{"last"} (latest point), \code{"rand"} (random selected point),
-and \code{"infl"} (smallest current Stein-matrix influence). Built-in transitions
-are the paper's Gaussian random-walk Metropolis and MALA. Custom \code{criterion},
-\code{transition_fn}, and \code{proposal_fn} expose these pieces without replacing the
-main loop. Diagnostics split MCMC and candidate-scoring evaluations in
-\code{counts}, accumulate them in \code{cum_n_eval}, and record acceptance rates and
-squared-distance movement for each short path.
+Built-in paths use random-walk Metropolis (\code{mcmc = "rwm"}) or MALA
+(\code{mcmc = "mala"}). \code{transition_fn}, \code{proposal_fn}, and a functional
+\code{criterion} provide optional extension points. A custom transition must
+return \code{X}, containing exactly the requested path rows; \code{D}, containing
+matching scores or \code{NULL}; and \code{counts}, containing nonnegative \code{log_p},
+\code{score}, and \code{total} entries with \code{total = log_p + score}.
 
-\code{\link[=sp_mcmc_state]{sp_mcmc_state()}} builds start-rule state; \code{\link[=sp_mcmc_criterion]{sp_mcmc_criterion()}} turns
-LAST/RAND/INFL or a custom function into a reusable selector;
-\code{\link[=sp_mcmc_select_start]{sp_mcmc_select_start()}} validates its row index; and
-\code{\link[=sp_mcmc_eval_candidates]{sp_mcmc_eval_candidates()}} applies the Stein Points objective. Thus moving
-from \code{\link[=stein_points]{stein_points()}} to \code{sp_mcmc()} retains the greedy objective but replaces
-its optimizer with \code{\link[=grw]{grw()}}, \code{\link[=rwm]{rwm()}}, \code{\link[=mala]{mala()}}, or another MCMC transition.
+The returned discrepancy after step \eqn{j} is
+\deqn{\mathrm{KSD}_j
+=\left\{\frac{1}{j^2}\sum_{a=1}^j\sum_{b=1}^j
+k_{0,p}(x_a,x_b)\right\}^{1/2}.}
 }
 \examples{
 score <- function(X) -as.matrix(X)
 log_p <- function(X) -0.5 * rowSums(as.matrix(X)^2)
 kernel <- stein_kernel(type = "gaussian_rbf", h = 1)
-sp_mcmc(score, log_p, kernel, n_points = 2, d = 1, m_seq = 2, x_init = 0)
+sp_mcmc(score, log_p, kernel, n_points = 2, d = 1, m_seq = 2, h = 0.1,
+        x_init = 0)
 }

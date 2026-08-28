@@ -8,7 +8,7 @@ fssd_opt_test(
   X,
   score_function,
   J = 5,
-  nboot = 2000,
+  n_simulations = 2000,
   kernel = c("gaussian_rbf", "imq"),
   scaling = NULL,
   train_ratio = 0.2,
@@ -27,95 +27,82 @@ fssd_opt_test(
 \item{score_function}{Function returning the target score for each row of
 \code{X}; the output should have shape \verb{n x d}.}
 
-\item{J}{Number of test locations.}
+\item{J}{Number of test locations in \code{L}.}
 
-\item{nboot}{Number of simulated null draws used for the p-value.}
+\item{n_simulations}{Number of null draws.}
 
 \item{kernel}{\code{"gaussian_rbf"}, \code{"imq"}, or a \code{SteinKernel} object.}
 
-\item{scaling}{Optional positive squared kernel scale. \code{NULL} uses the square
-of the median distance between all sample-row pairs. This exact calculation
-has quadratic time and memory cost; large-sample callers should provide
-\code{scaling} explicitly.}
+\item{scaling}{Starting positive squared kernel scale. \code{NULL} initializes it
+from a median-based training grid. Supplying a value skips that grid but
+does not hold \eqn{h^2} fixed when the kernel provides \code{set_scale_fn}. A
+scale stored in a \code{SteinKernel} object is the starting value and takes
+precedence.}
 
-\item{train_ratio}{Requested fraction of samples used to tune FSSD-opt. The
-split is rounded down and adjusted so both training and test sets contain
-at least two rows.}
+\item{train_ratio}{Fraction of rows requested for FSSD-opt training.}
 
-\item{gamma}{Small positive regularizer used by the FSSD-opt objective.}
+\item{gamma}{Positive regularizer in the FSSD-opt criterion.}
 
-\item{maxit}{Maximum number of L-BFGS-B optimizer iterations for FSSD-opt.}
+\item{maxit}{Maximum L-BFGS-B iterations for FSSD-opt.}
 
-\item{locs_bounds_frac}{Width of the box used to bound optimized test
-locations, measured in fitted standard deviations.}
+\item{locs_bounds_frac}{Location-bound width in fitted standard deviations.}
 
 \item{scale_lower, scale_upper}{Bounds for the optimized squared kernel
 scale.}
 
-\item{seed}{Optional RNG seed for the data split, random locations, and
-simulated null draws.}
+\item{seed}{Optional RNG seed for splitting rows, drawing starting locations,
+and simulating held-out null draws.}
 
-\item{imq_beta}{IMQ exponent.}
+\item{imq_beta}{Finite IMQ exponent \eqn{\beta<0}.}
 }
 \value{
-An object of class \code{htest}. The main fields are \code{statistic} (one number
-labeled \code{fssd}), \code{p.value}, \code{method}, \code{data.name}, and \code{parameter}. The
-\code{info} field is a
-list with \code{variant = "opt"}, optimized locations \code{V}, the kernel name,
-actual split sizes \code{n_train} and \code{n_test}, optimized squared scale
-\code{sigma2_opt} when applicable, optimized objective value \code{objective_opt},
-objective-function count \code{function_evaluations}, and L-BFGS-B \code{convergence}
-code. The statistic is computed only on the held-out test rows.
-
-The optimization diagnostics are returned because FSSD-opt is a two-stage
-method: first choose features, then test. If the optimizer stops early or
-chooses a boundary scale, those diagnostics matter for interpreting the final
-p-value.
+An object of class \code{htest}. \code{statistic} is
+\eqn{S_{n_{test}}=n_{test}\widehat{FSSD}^2}, computed on the held-out rows;
+\code{p.value} is obtained from the held-out plug-in null calibration. \code{info}
+contains \code{L}, the realized split sizes, optimized scale, objective value,
+objective-function count, and optimizer convergence code.
 }
 \description{
-Implements the FSSD-opt variant: use a training split to find test locations
-that make the FSSD signal large relative to its estimated variability, then
-run the final goodness-of-fit test on disjoint held-out data.
+Selects the test locations \eqn{L = \{v_1,\ldots,v_J\}} on training rows.
+For the built-in Gaussian RBF and IMQ kernels, and for custom kernels created
+with \code{set_scale_fn}, it also selects the squared kernel scale \eqn{h^2}. The
+FSSD statistic and null calibration use disjoint held-out rows.
 }
 \details{
-The FSSD paper chooses locations, and for Gaussian kernels also the
-bandwidth, by approximately maximizing test power under the alternative.
-This package uses the same idea with a small stabilizer:
+The function first splits \code{X} into training and held-out rows. On the training
+rows it selects \code{L} and, when applicable, \eqn{h^2} by maximizing
 \deqn{
-\frac{\widehat{FSSD}^2}
-     {\sqrt{\widehat{var}_{H1}} + \gamma},
+C(L,h^2) =
+\frac{\widehat{FSSD}_{train}^2}
+     {\sqrt{\widehat{\mathrm{Var}}_{H_1}} + \gamma},
 }
-where \code{gamma} keeps the denominator away from zero. The numerator is the
-training-sample FSSD estimate and the denominator is an empirical standard
-deviation proxy under the alternative.
+where
+\deqn{
+\widehat{\mathrm{Var}}_{H_1}
+  = 4\bar\tau^T\widehat\Sigma_\tau\bar\tau,
+\qquad
+\widehat\Sigma_\tau
+  = \frac{1}{n_{train}}\sum_{i=1}^{n_{train}}
+    (\tau_i-\bar\tau)(\tau_i-\bar\tau)^T.
+}
+Here \eqn{\bar\tau} is the mean feature vector on the training rows, and
+\eqn{\gamma>0} keeps the denominator away from zero.
 
-The algorithm first splits \code{X} into disjoint training and test rows. Starting
-locations are drawn from a Gaussian fitted to the training rows. When
-\code{scaling = NULL}, built-in kernels try a short grid centered on the exact
-all-training-row median scale before bounded L-BFGS-B refinement. An explicit
-\code{scaling} value is used directly as the optimizer's starting scale and skips
-that median grid. The locations and squared kernel scale are then refined
-jointly when applicable.
-The final statistic and null simulation are always evaluated on the held-out
-test rows. This disjointness is part of the paper's procedure: locations and
-bandwidth are learned on the training set, then the goodness-of-fit test is
-performed on the test set to avoid feature-selection overfitting.
-With \code{n = nrow(X)}, the actual training size is
-\code{max(2, min(floor(train_ratio * n), n - 2))}; the remaining rows form the
-test set.
+Starting locations are drawn from a Gaussian fitted to the training rows.
+When \eqn{h^2} is selected and \code{scaling = NULL}, it is initialized by a
+five-value grid around the training-row median scale. A supplied scale skips
+that grid and is used as the starting value. Bounded L-BFGS-B then refines
+\code{L} and \eqn{h^2} jointly.
 
-The optimized stage and the testing stage use the same feature definition
-but play different roles. During training, \code{\link[=compute_tau]{compute_tau()}} is evaluated
-repeatedly while \code{V} and the squared scale are changed, and
-\code{\link[=grad_theta_v_kernel]{grad_theta_v_kernel()}} supplies derivatives of the finite-location feature
-with respect to each test location. After optimization, \code{V} and the kernel
-scale are fixed; the final evaluation then follows the same lower-level path
-as \code{\link[=fssd_rand_test]{fssd_rand_test()}}: \code{\link[=compute_tau]{compute_tau()}}, \code{\link[=compute_fssd_unbiased_stat]{compute_fssd_unbiased_stat()}}, and
-\code{\link[=compute_fssd_null_pvalue]{compute_fssd_null_pvalue()}}.
+After optimization, \code{L} and the scale are fixed. \code{\link[=compute_tau]{compute_tau()}},
+\code{\link[=fssd_statistic]{fssd_statistic()}}, and \code{\link[=fssd_null_pvalue]{fssd_null_pvalue()}} are evaluated only on the
+held-out rows. Conditional on the training rows, the selected \code{L} and scale
+are fixed independently of the test rows, so the fixed-location null
+calibration applies.
 }
 \examples{
-X <- matrix(rnorm(12), ncol = 1)
+X <- matrix(rnorm(40), ncol = 1)
 score_function <- function(x) -as.matrix(x)
-fssd_opt_test(X, score_function, J = 1, nboot = 10, maxit = 1,
-              train_ratio = 0.5)
+fssd_opt_test(X, score_function, J = 1, scaling = 1,
+              train_ratio = 0.5, n_simulations = 10, maxit = 2)
 }

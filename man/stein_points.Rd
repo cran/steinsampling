@@ -2,7 +2,7 @@
 % Please edit documentation in R/stein_points.R
 \name{stein_points}
 \alias{stein_points}
-\title{Build a Stein Points sequence by greedy KSD minimization}
+\title{Select points by Stein discrepancy minimization}
 \usage{
 stein_points(
   score_function,
@@ -19,116 +19,74 @@ stein_points(
 )
 }
 \arguments{
-\item{score_function}{Function returning target scores for candidate rows.}
+\item{score_function}{Function taking an \verb{n x d} matrix and returning the
+corresponding \verb{n x d} matrix of target scores.}
 
-\item{kernel}{Built-in Stein kernel, compatible custom kernel, function
-\code{kernel(X, S_X, Y, S_Y)}, or list with \code{k0_matrix}. A Gaussian RBF kernel
-must have a fixed positive bandwidth \code{h}; unlike SVGD, Stein Points uses
-one fixed Stein kernel throughout the point-selection objective.}
+\item{kernel}{Kernel used to construct \eqn{k_{0,p}}. It may be a built-in
+kernel object, a compatible custom object, a function
+\code{kernel(X, S_X, Y, S_Y)}, or a list with \code{k0_matrix}. A Gaussian RBF
+kernel must use a fixed positive bandwidth.}
 
-\item{n_points}{Number of points to select.}
+\item{n_points}{Positive number of points to select.}
 
-\item{d}{Dimension of each point.}
+\item{d}{Positive state dimension.}
 
 \item{optimizer}{Function taking \verb{(objective, X_curr, t)} and returning
-\code{x_min}, \code{d_min}, \code{f_min}, and \code{n_eval}.}
+\code{x_min}, its score \code{d_min}, the minimized objective \code{f_min}, and the
+evaluation count \code{n_eval}.}
 
 \item{method}{Point-selection rule: \code{"greedy"} or \code{"herding"}.}
 
 \item{log_p}{Optional log density used to choose the first point.}
 
-\item{x_init}{Optional first point. If supplied, \code{log_p} is not used.}
+\item{x_init}{Optional finite numeric vector of length \code{d} giving the first
+point. If supplied, \code{log_p} is not used.}
 
 \item{c2}{Positive truncation constant when \code{truncation != "none"}.}
 
-\item{truncation}{Optional filter that removes candidates whose self-kernel
-value is too large. Use \code{"none"} for the basic Stein Points algorithm.}
+\item{truncation}{Candidate-filtering rule. Use \code{"none"} for no filtering.}
 
 \item{seed}{Optional local RNG seed.}
 }
 \value{
-A list with:
+An object of class \code{"stein_points"} with:
 \itemize{
-\item \code{X}: \verb{n_points x d} matrix of selected point locations.
-\item \code{D}: \verb{n_points x d} matrix of target scores evaluated at \code{X}.
-\item \code{ksd}: numeric vector; \code{ksd[j]} is the square root of the empirical KSD
-double average for the first \code{j} selected points, using the same \code{k0}
-that drove selection.
-\item \code{n_eval}: number of objective or score evaluations charged at each
-selection step. This is kept separate from \code{ksd} because different
-optimizers can reach similar KSD values with very different budgets.
-\item \code{cum_n_eval}: cumulative sum of \code{n_eval}, used for budget-vs-accuracy
-comparisons across \code{\link[=fmin_grid]{fmin_grid()}}, \code{\link[=fmin_mc]{fmin_mc()}}, \code{\link[=fmin_nm]{fmin_nm()}}, and SP-MCMC.
-\item \code{method}: \code{"greedy"} or \code{"herding"}.
-\item \code{kernel}: kernel object or compatible kernel supplied by the user.
-\item \code{truncation}, \code{c2}: truncation rule and constant used for candidate
-filtering.
+\item \code{X} and \code{D}: \verb{n_points x d} matrices of selected points and their scores.
+\item \code{ksd}: running discrepancy defined above.
+\item \code{n_eval} and \code{cum_n_eval}: per-step and cumulative evaluation counts.
+\item \code{method}, \code{kernel}, \code{truncation}, and \code{c2}: settings used by the run.
+\item \code{call}: matched function call.
 }
-
-The full list supports later analysis: \code{\link[=stein_codescent]{stein_codescent()}} can refine \code{X},
-\code{D} avoids rescoring, \code{ksd} records discrepancy, and \code{n_eval}/\code{cum_n_eval}
-compare grid, Monte Carlo, Nelder-Mead, and SP-MCMC at equal budgets.
 }
 \description{
-Implements the Stein Points construction of Chen et al. The function builds a
-point set whose empirical distribution is meant to approximate the target by
-making the kernel Stein discrepancy small. The point-selection rule itself
-introduces no randomness, but reproducibility depends on the numerical
-search: grid search is deterministic, whereas Monte Carlo and randomly
-initialized Nelder-Mead searches are stochastic unless their seed is fixed.
+Builds a point set sequentially. At each step, \code{optimizer} searches the
+continuous state space for the next point under a greedy or herding Stein
+objective.
 }
 \details{
-For selected points \eqn{x_1,\ldots,x_m}, the paper's KSD is
-\deqn{KSD_m^2 = \frac{1}{m^2}
-       \sum_{a=1}^m \sum_{b=1}^m k0(x_a, x_b).}
-\code{\link[=stein_kernel_matrix]{stein_kernel_matrix()}} assembles \code{k0} from the base kernel and target score
-\eqn{s_p(x)=\nabla_x\log p(x)}. The first point is \code{x_init}, or maximizes
-\code{log_p} to follow the paper's default mode-near start. Given
-\eqn{x_1,\ldots,x_{j-1}}, greedy selection minimizes
-\deqn{\frac{1}{2} k0(x, x) + \sum_{i=1}^{j-1} k0(x_i, x).}
-The implementation uses the equivalent doubled form
-\deqn{k0(x, x) + 2 \sum_{i=1}^{j-1} k0(x_i, x),}
-which has the same minimizer and equals the increment to
-\eqn{\sum_{a,b\le j}k0(x_a,x_b)}. Herding instead minimizes
-\deqn{\sum_{i=1}^{j-1} k0(x_i, x).}
-Its diagnostic still adds both cross interactions and the new self term, so
-\code{ksd} remains comparable between greedy and herding.
+Let \eqn{k_{0,p}} be the Stein kernel formed from \code{kernel} and
+\eqn{s_p(x)=\nabla_x\log p(x)}. Given selected points
+\eqn{x_1,\ldots,x_{j-1}}, the greedy rule chooses
+\deqn{x_j \in \mathop{\mathrm{argmin}}_{x\in\mathbb{R}^d} Q_j(x),}
+where
+\deqn{Q_j(x)=\frac{1}{2}k_{0,p}(x,x)
+      +\sum_{i=1}^{j-1}k_{0,p}(x_i,x).}
+With \code{method = "herding"}, the self-interaction is omitted and the
+objective is
+\deqn{Q_j^{\mathrm{herd}}(x)
+      =\sum_{i=1}^{j-1}k_{0,p}(x_i,x).}
 
-Global search is separated from the Stein objective. \code{optimizer} receives the
-objective, current matrix \code{X_curr}, and iteration \code{t}, and returns \code{x_min}
-(selected row), \code{d_min} (its score), \code{f_min} (objective), and \code{n_eval}
-(target or candidate evaluations). \code{\link[=fmin_grid]{fmin_grid()}}, \code{\link[=fmin_mc]{fmin_mc()}}, and
-\code{\link[=fmin_nm]{fmin_nm()}} implement the paper experiments' grid, Monte Carlo, and
-Nelder-Mead searches.
+\code{optimizer} performs the numerical search for each \eqn{x_j}. The supplied
+constructors \code{\link[=fmin_grid]{fmin_grid()}}, \code{\link[=fmin_mc]{fmin_mc()}}, and \code{\link[=fmin_nm]{fmin_nm()}} use grid, Monte
+Carlo, and Nelder--Mead search, respectively. The first point is \code{x_init};
+if \code{x_init} is \code{NULL}, \code{optimizer} instead maximizes \code{log_p}.
 
-The output stores selected \code{X}, matching scores
-\code{D[j, ]=s_p(X[j, ])}, and
-\deqn{ksd[j] =
-\left\{\frac{1}{j^2}
-\sum_{a=1}^j \sum_{b=1}^j k0(x_a,x_b)\right\}^{1/2}.}
-With \code{truncation != "none"}, the bound is checked when choosing points 2
-through \code{n_points}. The first point is kept as supplied, or chosen by its
-density, so check it separately if the same bound must also hold there.
-
-Thus the Stein objective knows the current points and score, while the
-optimizer only searches for the next candidate; this is why the helper
-constructors return optimizer functions rather than points.
-
-The three Stein Points kernel families are
-\deqn{k_{\mathrm{IMQ}}(x,y) = (c^2 + r(x,y))^\beta,\quad
-      r(x,y)=(x-y)^T M (x-y),}
-from \code{\link[=stein_kernel]{stein_kernel()}}, usually with \eqn{\beta\in(-1,0)};
-\deqn{k_{\log}(x,y) =
-      (\alpha+\log(1+||x-y||^2))^\beta,}
-from \code{\link[=stein_kernel_inverse_log]{stein_kernel_inverse_log()}}, with the paper's inverse-log choice
-recovered at \eqn{\beta=-1}; and
-\deqn{k_{\mathrm{score}}(x,y) =
-      (\alpha+||s_p(x)-s_p(y)||^2)^\beta,}
-from \code{\link[=stein_kernel_imq_score]{stein_kernel_imq_score()}}. All retain the same greedy/herding loop but
-use, respectively, position distance, logarithmic position distance, or
-score-vector distance before common Stein-kernel assembly. Score distance
-also needs a Hessian evaluator because derivatives of
-\eqn{s_p(x)=\nabla_x\log p(x)} enter \code{k0}.
+The returned discrepancy after step \eqn{j} is
+\deqn{\mathrm{KSD}_j
+=\left\{\frac{1}{j^2}\sum_{a=1}^j\sum_{b=1}^j
+k_{0,p}(x_a,x_b)\right\}^{1/2}.}
+When \code{truncation != "none"}, the truncation rule filters candidates from
+steps 2 through \code{n_points}; it is not applied to the first point.
 }
 \examples{
 score <- function(X) -as.matrix(X)

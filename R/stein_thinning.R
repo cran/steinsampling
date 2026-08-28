@@ -1,99 +1,88 @@
-# Stein thinning (Riabiz et al., 2022), Algorithm 1.
+# Stein thinning. `stein_thinning()` selects an ordered, repeatable sequence of
+# rows from an existing sample. Private helpers prepare scores, construct the
+# preconditioner, choose the kernel, and update the running greedy objective.
 
 # ---- Public entry --------------------------------------------------------
 
-#' Compress existing samples with Stein thinning
+#' Select existing samples by Stein thinning
 #'
-#' Implements Algorithm 1 of Riabiz et al. (2022). Given an existing MCMC output
-#' `X`, the function returns `m` row indices that define a compressed empirical
-#' measure with small kernel Stein discrepancy with respect to the target score.
+#' Selects an ordered sequence of row indices from an existing sample using the
+#' greedy Stein-thinning criterion of Riabiz et al. (2022). The function does
+#' not simulate or move sample points.
 #'
 #' @details
-#' Stein thinning post-processes rows `X[1, ],...,X[n, ]` already produced by a
-#' sampler: it neither simulates a chain, moves particles, nor optimizes over
-#' continuous space. It returns indices for subsetting those rows. Score matrix
-#' `S` must match `X`, with row `S[i, ]` equal to
-#' \eqn{s_p(X[i,])=\nabla_x\log p(x)|_{x=X[i,]}}. Alternatively,
-#' `score_function` is evaluated once to create `S`; the Stein kernel `k0` then
-#' uses these scores between rows of `X`.
+#' Let rows of `X` be \eqn{z_1^\top,\ldots,z_n^\top} and
+#' \deqn{K_{ab}=k_{0,p}(z_a,z_b).}
+#' Scores may be supplied through `S` or computed once using `score_function`.
+#' If the first \eqn{j-1} selected indices are
+#' \eqn{\pi(1),\ldots,\pi(j-1)}, the next index is
+#' \deqn{\pi(j)\in\operatorname*{arg\,min}_{i\in\{1,\ldots,n\}}
+#' \left\{K_{ii}+2\sum_{\ell=1}^{j-1}K_{\pi(\ell),i}\right\}.}
+#' The implementation stores one half of this objective,
+#' \deqn{\frac12K_{ii}+\sum_{\ell=1}^{j-1}K_{\pi(\ell),i},}
+#' which has the same minimizer. Each step adds one Stein-kernel row to the
+#' running objective, giving selection cost \eqn{O(nmd)} after the initial
+#' diagonal calculation.
 #'
-#' Starting from an empty sequence, after selecting
-#' \eqn{s_1,\ldots,s_{j-1}} the method minimizes
-#' \deqn{
-#' \frac{1}{2} k0(x_i, x_i) +
-#' \sum_{l=1}^{j-1} k0(x_{s_l}, x_i).
-#' }
-#' Although algebraically shaped like the marginal KSD decrease in greedy Stein
-#' Points, this selects indices from fixed support
-#' \eqn{\{x_1,\ldots,x_n\}} rather than generating locations. For returned
-#' \eqn{idx=(s_1,\ldots,s_m)}, the diagnostic is
-#' \deqn{KSD_m^2 = \frac{1}{m^2}
-#'        \sum_{a=1}^m \sum_{b=1}^m k0(x_{s_a}, x_{s_b}).}
-#' Each selected row's interactions are added to a running objective, equivalent
-#' to recomputing the sum but avoiding that work. If several rows have the same
-#' smallest value, the code takes the first one; the paper says any one may be
-#' used. Indices form a sequence, not necessarily a set: rows may
-#' repeat when this best lowers the objective.
+#' Ties use the first minimum. An index may be selected more than once, so `m`
+#' may exceed \eqn{n}; repeated indices represent repeated mass on the
+#' corresponding input rows.
 #'
-#' The integer vector directly represents the paper's support points and
-#' multiplicities: use `X[idx, , drop = FALSE]` and
-#' `S[idx, , drop = FALSE]`. A repeated index unambiguously gives the same
-#' original support point repeated mass.
+#' Let \eqn{M=\texttt{precon}} and
+#' \deqn{r_M(x,y)=(x-y)^\top M(x-y).}
+#' For the median rules, let \eqn{\rho} be the median pairwise Euclidean
+#' distance among the rows selected by `pre_subsample`. The rules are
+#' \deqn{M_{\mathrm{med}}=\frac{1}{\rho^2}I,\qquad
+#' M_{\mathrm{sclmed}}=\frac{\log(m)}{\rho^2}I,\qquad
+#' M_{\mathrm{smpcov}}=\widehat{\operatorname{Cov}}(X)^{-1}.}
+#' The default `"sclmed"` requires \eqn{m>1}. Both median rules require at
+#' least two preconditioning rows. If \eqn{\rho=0}, the package replaces
+#' \eqn{\rho^2} by 1 and warns. `"smpcov"` uses all rows and requires a
+#' nonsingular empirical covariance matrix.
 #'
-#' Thus this is compression, not another point generator. It shares the kernel
-#' layer with [stein_points()] and [sp_mcmc()], but those methods propose new
-#' locations; Stein thinning keeps a short indexed subsequence of an existing,
-#' typically MCMC-produced support set.
+#' When `pre_subsample` is scalar, `"first"`, `"even"`, and `"random"` use
+#' initial, evenly spaced, and randomly sampled rows. An explicit vector of row
+#' indices is used directly.
 #'
-#' Built-in kernels receive the paper's positive definite preconditioner `M`
-#' directly in
-#' \deqn{r(x, y) = (x - y)^T M (x - y).}
-#' If `med2` is the median squared Euclidean distance in the chosen
-#' preconditioning subsample, `"med"` uses
-#' \deqn{M = I / med2.}
-#' For zero median the paper recommends a positive exception such as length
-#' scale `ell = 1`; accordingly, the implementation warns and replaces
-#' `med2 = 0` by `1`. This remains positive definite but is no longer
-#' data-adaptive; zero commonly indicates repeated states or poor MCMC mixing
-#' and should be diagnosed, not treated as a successful estimate.
+#' The default base kernel is
+#' \deqn{k(x,y)=\{1+r_M(x,y)\}^{-1/2}.}
+#' A Gaussian RBF kernel is supported but must have a fixed positive bandwidth;
+#' by default its use produces a warning. For supplied built-in RBF or IMQ
+#' objects, `pre` replaces the object's existing preconditioner. Custom
+#' callbacks may use the `precon` argument passed by Stein thinning.
 #'
-#' The paper's default scaled-median rule, `"sclmed"`, is
-#' \deqn{M = \log(m) I / med2,}
-#' equivalent to \eqn{\Gamma=\ell^2I},
-#' \eqn{\ell=med/\sqrt{\log(m)}} and \eqn{M=\Gamma^{-1}}. This rule requires
-#' `m > 1`. It heuristically balances aggregate kernel interactions, but changes
-#' the kernel with `m`; Riabiz et al. therefore state that their preceding
-#' fixed-kernel theory does not cover `"sclmed"`.
-#'
-#' For both median rules, unaffected consistency assumes a fixed `n0` MCMC
-#' states construct the preconditioner. `pre_subsample` controls this here;
-#' using all rows or letting its size grow lies outside that statement.
-#' `"smpcov"` uses the inverse empirical covariance of `X`.
-#'
-#' @param X Numeric matrix with samples in rows.
-#' @param S Optional score matrix with the same shape as `X`.
-#' @param m Positive integer number of points to select. The default
-#'   `pre = "sclmed"` additionally requires `m > 1`.
-#' @param score_function Optional `function(X)` returning scores.
-#' @param pre Preconditioning rule:
-#'   `"sclmed"`, `"med"`, or `"smpcov"`.
-#' @param kernel `"imq"` (default), `"gaussian_rbf"`, or a `SteinKernel`
-#'   object, including objects made by [custom_stein_kernel()]. A supplied
-#'   Gaussian RBF object must have a fixed positive bandwidth `h`; Stein
-#'   thinning uses one fixed kernel throughout Algorithm 1.
-#' @param pre_subsample Maximum number of rows used for median-based scaling,
-#'   or a vector of row indices to use directly.
-#' @param pre_subsample_method How to choose rows when `pre_subsample` is a
-#'   scalar: `"first"`, `"even"`, or `"random"`.
-#' @param verbose_rbf_warning Warn when using RBF instead of the usual IMQ
-#'   Stein thinning default.
-#' @param ... Kernel parameters forwarded to [stein_kernel()], such as `c`,
-#'   `beta`, `h`, `sigma`, or `sigma2` for RBF.
+#' @param X Finite numeric vector or matrix containing \eqn{n} existing
+#'   samples. Rows are samples and columns are coordinates; a vector is treated
+#'   as an \eqn{n\times1} matrix.
+#' @param S Optional finite numeric \eqn{n\times d} score matrix with row
+#'   \eqn{s_p(z_i)^\top}. Supply `S` or `score_function`.
+#' @param m Positive integer number of indices to select. Repetition is
+#'   allowed, so `m` may exceed \eqn{n}. The default `"sclmed"` rule requires
+#'   `m > 1`.
+#' @param score_function Optional function that accepts `X` and returns an
+#'   \eqn{n\times d} score matrix. When supplied, its result is used instead of
+#'   `S`.
+#' @param pre Preconditioning rule: `"sclmed"`, `"med"`, or `"smpcov"`.
+#' @param kernel Either `"imq"`, `"gaussian_rbf"`, or a `SteinKernel` object.
+#'   The default is `"imq"`. A supplied Gaussian RBF object must have a fixed
+#'   positive bandwidth.
+#' @param pre_subsample For `"med"` and `"sclmed"`, either a positive integer
+#'   giving the maximum number of rows used to estimate \eqn{\rho}, `Inf` for
+#'   all rows, or an explicit vector of row indices. Ignored for `"smpcov"`.
+#' @param pre_subsample_method Row-selection method used when `pre_subsample`
+#'   is scalar: `"first"`, `"even"`, or `"random"`.
+#' @param verbose_rbf_warning Logical; when `TRUE` (the default), supplying a
+#'   Gaussian RBF kernel warns that Riabiz et al. (2022) use IMQ as the Stein
+#'   thinning default. Set `FALSE` to silence it.
+#' @param ... Kernel parameters used when `kernel` is a character string: `c`
+#'   and `beta` for IMQ, or `h` and `sigma` for Gaussian RBF. The compatibility
+#'   argument `sigma2` is also accepted for RBF when neither `h` nor `sigma` is
+#'   supplied.
 #'
 #' @return
-#' Length-`m` integer vector of one-based row indices in selection order. It is
-#' unsorted and may repeat; `X[idx, , drop = FALSE]` is the thinned sample, with
-#' repeats representing repeated support points in the empirical measure.
+#' Integer vector \eqn{(\pi(1),\ldots,\pi(m))} containing one-based row indices
+#' in selection order. It is not sorted and may contain repeated indices. The
+#' selected sample is `X[idx, , drop = FALSE]`.
 #'
 #' @examples
 #' X <- matrix(rnorm(6), ncol = 1)
@@ -109,39 +98,41 @@ stein_thinning <- function(X, S = NULL, m,
                            verbose_rbf_warning = TRUE, ...) {
   inputs <- .prepare_thinning_inputs(X, S, score_function)
   X <- inputs$X
-  S <- inputs$S
+  scores <- inputs$S
 
-  m <- validate_positive_integer(m, "m")
+  m <- validate_integer(m, "m")
   pre <- match.arg(pre)
   pre_subsample_method <- match.arg(pre_subsample_method)
 
   precon <- .build_thinning_precon(
     X, m, pre, pre_subsample, pre_subsample_method
   )
-  kernel <- .make_thinning_kernel(kernel, precon, ...)
+  kernel_obj <- .make_thinning_kernel(kernel, precon, ...)
 
-  if (inherits(kernel, "SteinKernel_gaussian_rbf") && isTRUE(verbose_rbf_warning)) {
+  if (inherits(kernel_obj, "SteinKernel_gaussian_rbf") &&
+      isTRUE(verbose_rbf_warning)) {
     warning(
       "Gaussian RBF is supported, but Riabiz et al. (2022) use IMQ as the core Stein thinning default.",
       call. = FALSE
     )
   }
 
-  objective <- 0.5 * .kP_diag_vector(X, S, kernel, precon)
+  objective <- 0.5 * k0_diag(kernel_obj, X, scores, precon = precon)
   selected <- integer(m)
 
   for (j in seq_len(m)) {
     # which.min() returns the first minimum, giving deterministic tie-breaking.
     idx <- which.min(objective)
     selected[j] <- idx
-    objective <- objective + .kP_row_vector(idx, X, S, kernel, precon)
+    objective <-
+      objective + .kP_row_vector(idx, X, scores, kernel_obj, precon)
   }
 
   selected
 }
 
 
-# ---- Algorithm 1 kernel calls ------------------------------------------
+# ---- Algorithm 1 kernel calls --------------------------------------------
 
 .kP_row_vector <- function(idx, X, S, kernel, precon) {
   as.numeric(stein_kernel_matrix(
@@ -154,21 +145,7 @@ stein_thinning <- function(X, S = NULL, m,
   ))
 }
 
-.kP_diag_vector <- function(X, S, kernel, precon) {
-  vapply(seq_len(nrow(X)), function(i) {
-    stein_kernel_matrix(
-      kernel,
-      X[i, , drop = FALSE],
-      S[i, , drop = FALSE],
-      X[i, , drop = FALSE],
-      S[i, , drop = FALSE],
-      precon = precon
-    )[1, 1]
-  }, numeric(1))
-}
-
-
-# ---- Preconditioners from Section 2.3 ----------------------------------
+# ---- Preconditioners ------------------------------------
 
 .build_thinning_precon <- function(X, m, pre, pre_subsample,
                                    pre_subsample_method = "first") {
@@ -216,9 +193,28 @@ stein_thinning <- function(X, S = NULL, m,
 
 .pre_subsample_rows <- function(n, pre_subsample, method) {
   if (length(pre_subsample) > 1L) {
-    rows <- as.integer(pre_subsample)
+    if (!is.numeric(pre_subsample) || any(!is.finite(pre_subsample)) ||
+        any(pre_subsample < 1) ||
+        any(abs(pre_subsample - round(pre_subsample)) >
+            sqrt(.Machine$double.eps))) {
+      stop("pre_subsample indices must be positive integers", call. = FALSE)
+    }
+    rows <- as.integer(round(pre_subsample))
   } else {
-    n0 <- if (is.infinite(pre_subsample)) n else as.integer(pre_subsample)
+    if (!is.numeric(pre_subsample) || length(pre_subsample) != 1L ||
+        is.na(pre_subsample) || pre_subsample <= 0 ||
+        (!is.infinite(pre_subsample) &&
+         abs(pre_subsample - round(pre_subsample)) > sqrt(.Machine$double.eps))) {
+      stop(
+        "pre_subsample must be a positive integer, Inf, or integer row indices",
+        call. = FALSE
+      )
+    }
+    n0 <- if (is.infinite(pre_subsample)) {
+      n
+    } else {
+      as.integer(round(pre_subsample))
+    }
     n0 <- min(n, n0)
     if (!is.finite(n0) || n0 < 1L) {
       stop("pre_subsample must select at least one row.", call. = FALSE)
@@ -238,13 +234,18 @@ stein_thinning <- function(X, S = NULL, m,
 }
 
 
-# ---- Kernel selection ---------------------------------------------------
+# ---- Kernel selection ----------------------------------------------------
 
 .make_thinning_kernel <- function(kernel, precon, ...) {
   if (inherits(kernel, "SteinKernel")) {
     require_fixed_gaussian_rbf(kernel, "Stein thinning")
     if (inherits(kernel, "SteinKernel_imq") ||
         inherits(kernel, "SteinKernel_gaussian_rbf")) {
+      if (!is.null(kernel$precon) &&
+          !isTRUE(all.equal(unname(kernel$precon), unname(precon)))) {
+        warning("`pre` replaces the preconditioner carried by `kernel`.",
+                call. = FALSE)
+      }
       kernel$precon <- precon
     }
     return(kernel)
@@ -273,17 +274,23 @@ stein_thinning <- function(X, S = NULL, m,
 }
 
 
-# ---- Input assembly -----------------------------------------------------
+# ---- Input assembly ------------------------------------------------------
 
 .prepare_thinning_inputs <- function(X, S, score_function) {
-  X <- as.matrix(X)
-  if (!is.null(score_function)) {
-    S <- score_function(X)
-  } else if (is.null(S)) {
-    stop("Provide S or score_function.")
-  }
+  X <- .as_rows(X, "X")
 
-  S <- as.matrix(S)
-  if (!identical(dim(X), dim(S))) stop("X and S must have the same dimensions.")
+  if (!is.null(score_function)) {
+    if (!is.function(score_function)) {
+      stop("`score_function` must be a function", call. = FALSE)
+    }
+    S <- .as_score_matrix(score_function(X), X)
+  } else if (is.null(S)) {
+    stop("provide `S` or `score_function`", call. = FALSE)
+  } else {
+    S <- .as_rows(S, "S")
+    if (!identical(dim(X), dim(S))) {
+      stop("`X` and `S` must have the same dimensions", call. = FALSE)
+    }
+  }
   list(X = X, S = S)
 }

@@ -2,7 +2,7 @@
 % Please edit documentation in R/ksd_u_test.R
 \name{ksd_u_test}
 \alias{ksd_u_test}
-\title{KSD goodness-of-fit test using the Liu et al. U-statistic}
+\title{KSD-U goodness-of-fit test for independent observations}
 \usage{
 ksd_u_test(
   X,
@@ -18,97 +18,61 @@ ksd_u_test(
 )
 }
 \arguments{
-\item{X}{Numeric vector or matrix of samples. A vector is treated as \verb{n x 1}.}
+\item{X}{Numeric vector or matrix containing \eqn{n} observations. Rows are
+observations and columns are coordinates; a vector is treated as an
+\eqn{n\times 1} matrix.}
 
-\item{score_function}{Function returning the target score for each row of
-\code{X}.}
+\item{score_function}{Function that accepts the checked \eqn{n\times d}
+sample matrix and returns the \eqn{n\times d} matrix with row
+\eqn{s_p(X_i)^\top}.}
 
 \item{boot_method}{Bootstrap method. Currently only
 \code{"multinomial_centered"} is supported.}
 
-\item{scaling}{Positive kernel scale. \code{NULL} uses the square of the exact
-all-pair median distance.}
+\item{scaling}{Positive squared scale passed to the kernel. For the built-in
+RBF and IMQ kernels this is, respectively, \eqn{h^2} and \eqn{c^2}.
+\code{NULL} uses the squared median pairwise distance.}
 
-\item{nboot}{Number of bootstrap samples.}
+\item{nboot}{Positive number of bootstrap draws \eqn{B}.}
 
 \item{kernel}{Kernel choice: \code{"gaussian_rbf"}, \code{"imq"}, or a \code{SteinKernel}
-object, including objects created by \code{\link[=custom_stein_kernel]{custom_stein_kernel()}}.}
+object.}
 
-\item{return_raw_boot}{Logical; if \code{TRUE}, return bootstrap samples.}
+\item{return_raw_boot}{Logical. If \code{TRUE}, include the \eqn{B} bootstrap
+draws in the result.}
 
-\item{block_size, block_threshold}{Options for computing large kernel
-matrices in blocks.}
+\item{block_size}{Positive number of rows per block. \code{NULL} uses
+\code{min(1024, n)} when \code{n > block_threshold} and \code{n} otherwise. Blocking
+changes memory use, not the test definition.}
 
-\item{imq_beta}{IMQ kernel exponent.}
+\item{block_threshold}{Positive sample-size threshold above which blockwise
+computation is used.}
+
+\item{imq_beta}{Finite exponent \eqn{\beta<0} of the built-in IMQ kernel.}
 }
 \value{
-An object of class \code{htest}, implemented as a list with:
-\itemize{
-\item \code{statistic}: one number labeled \code{ksd_u}; this is the observed
-off-diagonal U-statistic.
-\item \code{p.value}: right-tail bootstrap p-value using the package's
-\code{(1 + exceedances) / (nboot + 1)} finite-bootstrap convention.
-\item \code{method}: text naming the KSD U-statistic test and kernel.
-\item \code{data.name}: expression used for \code{X}.
-\item \code{parameter}: numeric vector containing \code{nboot}, the squared kernel
-\code{scaling} used, and \code{imq_beta} when the IMQ kernel is used.
-\item \code{bootstrap_samples}: present only when \code{return_raw_boot = TRUE}; numeric
-vector of bootstrap U-statistics on the same scale as \code{statistic}.
-}
-
-The \code{htest} shape prints like other R tests; \code{parameter} and optional
-\code{bootstrap_samples} retain settings needed to reproduce or diagnose the
-p-value.
+An \code{htest} object. \code{statistic} is \eqn{T_n=nU_n}; \code{p.value} is the
+bootstrap p-value above. If \code{return_raw_boot = TRUE}, \code{bootstrap_samples}
+contains \eqn{T_n^{*(1)},\ldots,T_n^{*(B)}}.
 }
 \description{
-Runs the Kernel Stein Discrepancy goodness-of-fit test in the U-statistic
-form of Liu, Lee, and Jordan (2016). The input sample is compared with a
-target distribution through the target score, so the normalizing constant of
-the target density is not needed.
+Tests whether independent observations come from a target distribution
+specified by its score function. The target density need not be normalized.
 }
 \details{
-Let \code{p} be the target density, \eqn{s_p(x)=\nabla_x\log p(x)} its score, and
-\code{k0(x,y)} the Stein kernel built from that score and the selected base kernel;
-the normalizing constant of \code{p} is unnecessary. Liu et al. call this kernel
-\code{u_q} because their target is \code{q}; the package consistently uses \code{k0}. See
-\code{\link[=stein_kernel_matrix]{stein_kernel_matrix()}} for its four terms.
+Let \eqn{s_p(x)=\nabla_x\log p(x)} and
+\deqn{K_{ij}=k_{0,p}(X_i,X_j),}
+where \eqn{k_{0,p}} is the Stein kernel defined in
+\code{\link[=stein_kernel_matrix]{stein_kernel_matrix()}}. The test uses
+\deqn{U_n=\frac{1}{n(n-1)}\sum_{i\ne j}K_{ij},\qquad T_n=nU_n.}
+The diagonal is excluded. Thus \eqn{U_n} is unbiased for the population
+squared KSD, but its finite-sample value can be negative.
 
-\code{X} is interpreted row-wise; vectors become \verb{n x 1} matrices, and
-\code{score_function} is evaluated once and must return an \verb{n x d} matrix. With
-\code{scaling = NULL}, \code{\link[=find_median_distance]{find_median_distance()}} uses all rows to return the squared
-median pairwise distance: an RBF squared bandwidth or IMQ squared length
-scale. This exact calculation has quadratic time and memory cost, so large
-samples should supply \code{scaling}. For a preconditioned RBF object without a
-fixed bandwidth, the rule uses preconditioned distances and retains that
-preconditioner.
-
-For observations \eqn{x_1,\ldots,x_n}, the paper's estimator is
-\deqn{U = \frac{1}{n(n - 1)} \sum_{i \ne j} k0(x_i, x_j).}
-It omits \code{k0(x_i,x_i)} and is degenerate under the target, so its null is not
-a plain normal approximation.
-
-Following Liu et al., the test (1) builds the \verb{n x n} Stein-kernel matrix,
-(2) zeros its diagonal for the U-statistic, (3) generates centered
-multinomial weights \code{w_i=N_i/n-1/n}, and (4) compares \code{U} with \verb{w^T K0 w}.
-Observed and bootstrap values remain on the unmultiplied U-statistic scale;
-multiplying both by \code{n} leaves the p-value unchanged. Large positive values
-indicate disagreement with the target score in kernel Stein discrepancy.
-
-The statistic and bootstrap reproduce Liu et al.; the scalar p-value follows
-the package convention
-\deqn{p = \frac{1 + \#\{b:T_b \ge T_{obs}\}}{B+1}.}
-Algorithm 1 instead rejects using the uncorrected strict proportion
-\eqn{B^{-1}\#\{b:T_b>T_{obs}\}}. The \code{+1} correction prevents zero Monte
-Carlo p-values but is neither a verbatim algorithm step nor a new
-finite-sample KSD-bootstrap guarantee.
-
-This is Liu et al.'s independent-sample test; \code{\link[=ksd_v_test]{ksd_v_test()}} supplies the
-Chwialkowski et al. V-statistic with independent or Markov wild-bootstrap
-signs for ordered or dependent samples. Its lower-level pieces are
-\code{\link[=ksd_uq_matrix]{ksd_uq_matrix()}} for the Stein-kernel matrix, \code{\link[=ksd_u_statistic]{ksd_u_statistic()}} for the
-off-diagonal average, and \code{\link[=ksd_u_bootstrap]{ksd_u_bootstrap()}} for centered
-multinomial weights. The V-statistic counterparts are \code{\link[=ksd_vq_matrix]{ksd_vq_matrix()}},
-\code{\link[=ksd_v_statistic]{ksd_v_statistic()}}, and \code{\link[=ksd_v_bootstrap]{ksd_v_bootstrap()}}.
+Null calibration uses the centered multinomial bootstrap implemented by
+\code{\link[=ksd_u_bootstrap]{ksd_u_bootstrap()}}. If \eqn{T_n^{*(1)},\ldots,T_n^{*(B)}} are the bootstrap
+draws, the reported right-tail p-value is
+\deqn{\widehat p=\frac{1+\sum_{b=1}^B
+\mathbf{1}\{T_n^{*(b)}\ge T_n\}}{B+1}.}
 }
 \examples{
 X <- matrix(rnorm(10), ncol = 1)

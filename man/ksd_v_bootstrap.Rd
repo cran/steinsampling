@@ -2,66 +2,53 @@
 % Please edit documentation in R/ksd_v_test.R
 \name{ksd_v_bootstrap}
 \alias{ksd_v_bootstrap}
-\title{Wild-bootstrap the KSD V-statistic}
+\title{Wild bootstrap for KSD-V}
 \usage{
 ksd_v_bootstrap(
-  U_mat,
-  W_mat = NULL,
+  K0,
   nboot = 1000,
+  W_mat = NULL,
   boot_method = c("rademacher", "markov"),
   change_prob = NULL
 )
 }
 \arguments{
-\item{U_mat}{Numeric square matrix of pairwise Stein kernel values.}
+\item{K0}{Numeric \eqn{n\times n} Stein-kernel matrix, such as the output of
+\code{\link[=ksd_vq_matrix]{ksd_vq_matrix()}}.}
 
-\item{W_mat}{Optional \verb{n x B} wild-bootstrap sign matrix, with entries
-usually equal to \code{-1} or \code{1}.}
+\item{nboot}{Positive number of bootstrap draws. Ignored when \code{W_mat} is
+supplied.}
 
-\item{nboot}{Number of bootstrap samples.}
+\item{W_mat}{Optional numeric \eqn{n\times B} sign matrix. Row \eqn{i}
+corresponds to observation \eqn{i}; column \eqn{b} specifies bootstrap
+draw \eqn{b}. If \code{NULL}, signs are generated from \code{boot_method}.}
 
-\item{boot_method}{One of \code{"rademacher"} or \code{"markov"} when \code{W_mat} is NULL.}
+\item{boot_method}{Sign process used when \code{W_mat = NULL}: \code{"rademacher"} or
+\code{"markov"}.}
 
-\item{change_prob}{Markov sign-flip probability when
-\code{boot_method = "markov"}; it must be strictly between 0 and 1 and supplied
-explicitly.}
+\item{change_prob}{Markov sign-change probability \eqn{a_n}. It must be
+supplied and lie strictly between 0 and 1 when \code{boot_method = "markov"}.}
 }
 \value{
-Numeric vector of bootstrap statistics on the scaled \verb{n V_n} scale. Its
-length is \code{nboot} when signs are generated internally, or \code{ncol(W_mat)} when
-a sign matrix is supplied.
+Numeric vector containing \eqn{nV_n^{*(1)},\ldots,nV_n^{*(B)}}.
 }
 \description{
-Applies independent or Markov sign weights to a fixed KSD V-statistic matrix.
-This is the bootstrap step of the Chwialkowski et al. test separated from the
-construction of the Stein-kernel matrix.
+Wild bootstrap for KSD-V
 }
 \details{
-For each bootstrap weight vector \code{w}, the bootstrap statistic is
-\deqn{\frac{1}{n} \sum_{i,j} w_i U_{ij} w_j.}
-This is on the same scaled \verb{n V_n} scale as \code{\link[=ksd_v_statistic]{ksd_v_statistic()}}. Equivalently,
-Chwialkowski et al. define a bootstrap V-statistic with a \code{1 / n^2} factor and
-compare \code{n} times that value; the formula above is that scaled value. The
-weights are either independent signs or Markov signs, depending on
-\code{boot_method}. For the dependent-sample theory, the Markov flip probability
-is a sample-size-dependent sequence \eqn{p_n \to 0} satisfying
-\eqn{n p_n \to \infty}, together with the mixing, Lipschitz, and moment
-assumptions documented in \code{\link[=ksd_v_test]{ksd_v_test()}}. A fixed value of \code{0.5} gives
-independent signs and does not reproduce that dependent wild bootstrap.
-Supplying \code{W_mat} is useful when the same bootstrap sign sequences should be
-reused across kernels or repeated experiments.
-
-The function is separated from \code{\link[=ksd_vq_matrix]{ksd_vq_matrix()}} for the same reason as in
-the U-statistic API: matrix construction is deterministic once \code{X}, the
-score, and the kernel are fixed, while the bootstrap is random unless the
-user supplies \code{W_mat}. This split lets simulation studies control those two
-sources separately.
-
-The parallel U-statistic helper is \code{\link[=ksd_u_bootstrap]{ksd_u_bootstrap()}}. Use this V helper
-when \code{U_mat} will be summarized by \code{\link[=ksd_v_statistic]{ksd_v_statistic()}} and when bootstrap
-weights should be sign sequences. Use the U helper when \code{U_mat} will be
-summarized by \code{\link[=ksd_u_statistic]{ksd_u_statistic()}} and the Liu et al. centered multinomial
-bootstrap is desired.
+For sign vector \eqn{W^{(b)}}, the returned draw is
+\deqn{nV_n^{*(b)}=\frac{1}{n}\sum_{i=1}^n\sum_{j=1}^n
+W_i^{(b)}W_j^{(b)}K_{ij}.}
+Rademacher signs are independent and take values \eqn{-1} and \eqn{1} with
+equal probability. Markov signs satisfy
+\deqn{W_1^{(b)}=1,\qquad W_t^{(b)}=
+\begin{cases}
+-W_{t-1}^{(b)},&\text{with probability }a_n,\\
+W_{t-1}^{(b)},&\text{with probability }1-a_n.
+\end{cases}}
+Here \eqn{a_n} is \code{change_prob}. All matrix entries, including the diagonal,
+are used. The draws are on the same scale as \code{\link[=ksd_v_statistic]{ksd_v_statistic()}}. This
+function does not compute a p-value.
 }
 \examples{
 U <- matrix(c(1, 0.2, 0.3, 0.2, 1, 0.4, 0.3, 0.4, 1), 3, 3)

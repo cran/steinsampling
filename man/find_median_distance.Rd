@@ -2,56 +2,30 @@
 % Please edit documentation in R/stein_helpers.R
 \name{find_median_distance}
 \alias{find_median_distance}
-\title{Median squared distance between sample pairs}
+\title{Median-heuristic squared scale}
 \usage{
 find_median_distance(Z)
 }
 \arguments{
-\item{Z}{Numeric vector, matrix, or data frame of samples.}
+\item{Z}{Finite numeric vector, matrix, or data frame with at least two
+observations. Matrix rows are observations; a vector is treated as an
+\verb{n x 1} sample.}
 }
 \value{
-A positive numeric scalar. It is the square of the median finite
-off-diagonal Euclidean distance. Use \code{sqrt(find_median_distance(Z))} only if
-a distance-scale bandwidth is needed. If all finite pairwise distances
-are zero, the returned value is \code{1e-5}; if no finite distance can be formed,
-the returned fallback is \code{1}.
+The positive scalar \eqn{\rho_{\mathrm{med}}}.
 }
 \description{
-Computes the square of the median Euclidean distance between all sample-row
-pairs. This is the exact median-heuristic squared scale used by the built-in
-kernels when the user does not supply a scale.
+Computes the squared median Euclidean distance between sample rows.
 }
 \details{
-If the sample rows are \verb{z_1, ..., z_n} in \code{R^d}, the full calculation forms
-the vector of all off-diagonal Euclidean distances
-\deqn{
-  D = \{ ||z_i - z_j||_2 : 1 \le i < j \le n \}.
-}
-If \verb{d_ij = ||z_i - z_j||_2}, the return value is
-\code{median({d_ij : i < j})^2}. The median is taken before squaring, matching the
-bandwidth rule stated in the KSD-U and FSSD experiments. This order matters
-when the number of pairwise distances is even. For matrix input, rows are
-observations and columns are coordinates; a numeric vector is treated as an
-\verb{n x 1} sample.
-
-The value is a data-dependent bandwidth proxy. In this package it is used as
-a squared scale for built-in kernels when the user supplies \code{scaling = NULL}.
-For the Gaussian RBF kernel this means \code{h^2 = median(d_ij)^2} in
-\verb{exp(-||x - y||^2 / (2 h^2))}. For the IMQ kernel it means
-\code{c^2 = median(d_ij)^2} in \verb{(c^2 + ||x - y||^2)^beta}. The function does not
-standardize columns, so variables should already be on a comparable scale
-or the user should provide a kernel scale directly.
-
-All \eqn{n(n - 1) / 2} pairwise distances are used. The calculation is
-therefore deterministic but requires quadratic time and memory in the row
-count. For large samples, provide \code{scaling} explicitly to the calling KSD or
-FSSD routine, or provide a fixed bandwidth when constructing a kernel.
-
-Repeated or nearly repeated rows can make the median equal to zero. A zero
-squared scale would make the built-in kernels ill-defined, so the function
-returns a small positive floor value and emits a warning in that case. This
-warning is usually a signal that the sample contains many duplicates or that
-the chain has not moved enough for a median-distance rule to be informative.
+For rows \eqn{z_1,\ldots,z_n}, the returned scale is
+\deqn{\rho_{\mathrm{med}}
+=\left\{\mathop{\mathrm{median}}_{i<j}
+\lVert z_i-z_j\rVert_2\right\}^{2}.}
+The median is taken before squaring. All \eqn{n(n-1)/2} pairs are used, so
+the calculation requires quadratic time and memory. Coordinates are not
+standardized. If the median distance is zero, the function warns and
+returns the floor value \eqn{10^{-5}}.
 }
 \examples{
 find_median_distance(c(-1, 0, 2))

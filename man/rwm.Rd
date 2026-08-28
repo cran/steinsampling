@@ -2,49 +2,50 @@
 % Please edit documentation in R/stein_point_mcmc.R
 \name{rwm}
 \alias{rwm}
-\title{Alias for the Gaussian random-walk transition}
+\title{Run a Gaussian random-walk Metropolis chain}
 \usage{
-rwm(log_p, score_function, x0, h = NULL, Sigma = NULL, m_iter)
+rwm(log_p, x0, h, Sigma = NULL, m_iter)
 }
 \arguments{
 \item{log_p}{Function returning log density values.}
 
-\item{score_function}{Unused score function argument kept for transition
-interface compatibility.}
-
 \item{x0}{Initial state vector.}
 
-\item{h}{Optional positive step-size multiplier.}
+\item{h}{Positive step-size multiplier. The proposal covariance is
+\code{h * Sigma}.}
 
-\item{Sigma}{Symmetric positive-definite proposal covariance or
-preconditioning matrix.}
+\item{Sigma}{Symmetric positive-definite proposal covariance scale. If
+\code{NULL}, the identity matrix is used.}
 
 \item{m_iter}{Number of returned chain rows, including the initial state in
 row 1. The function therefore makes \code{m_iter - 1} Markov transitions.}
 }
 \value{
-Output from \code{\link[=grw]{grw()}}: chain states, log-density values, acceptance indicators,
-and evaluation counts. The alias exists for naming compatibility with the
-SP-MCMC paper; it does not change the transition or add fields.
+A list with the same fields as \code{\link[=mala]{mala()}}: \code{X} (chain states), \code{D} (explicitly
+\code{NULL} because RWM does not evaluate scores), \code{log_p} (log density values),
+\code{accept} (0/1 acceptance indicators), \code{n_eval}, and \code{counts}. The explicit
+\code{D = NULL} tells \code{\link[=sp_mcmc]{sp_mcmc()}} to score the distinct candidate states after
+the path is generated.
 }
 \description{
-Calls \code{\link[=grw]{grw()}} with the same arguments. It is provided because the SP-MCMC
-paper refers to the Gaussian random-walk Metropolis transition as RWM.
+Runs the random-walk Metropolis kernel used as the other built-in SP-MCMC
+candidate-chain transition.
 }
 \details{
-This function is intentionally thin. The package's implementation name for
-the transition is \code{\link[=grw]{grw()}}, short for Gaussian random walk, while the paper
-commonly uses RWM, short for random-walk Metropolis. Keeping both exported
-names avoids forcing users to translate between the paper notation and the
-package notation.
+From the current state \code{x}, the proposal is
+\deqn{y = x + z, \quad z \sim N(0, h Sigma).}
+The move is accepted with probability \code{min(1, exp(log_p(y) - log_p(x)))}.
+Unlike MALA, this transition does not use the score to propose moves, so any
+candidate scores needed by SP-MCMC are computed later by
+\code{\link[=sp_mcmc_eval_candidates]{sp_mcmc_eval_candidates()}}.
 
-No additional computation happens here: \code{rwm()} forwards the arguments to
-\code{\link[=grw]{grw()}}, which in turn calls \code{\link[=grwmetrop]{grwmetrop()}} with proposal covariance
-\code{h * Sigma}. The return object therefore has exactly the same fields as
-\code{\link[=grw]{grw()}}.
+The first row of the returned chain is \code{x0}. Subsequent rows are accepted
+proposals or repeats of the previous state after rejection. The acceptance
+indicators therefore describe whether each transition moved, not whether a
+row is unique. \code{\link[=sp_mcmc]{sp_mcmc()}} removes duplicate candidate states later before
+scoring the path with the Stein Points objective.
 }
 \examples{
-score <- function(X) -as.matrix(X)
 log_p <- function(X) -0.5 * rowSums(as.matrix(X)^2)
-rwm(log_p, score, x0 = 0, h = 0.1, m_iter = 3)
+rwm(log_p, x0 = 0, h = 0.1, m_iter = 3)
 }

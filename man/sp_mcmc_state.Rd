@@ -39,15 +39,13 @@ sp_mcmc_state(
 
 \item{mcmc}{MCMC transition name.}
 
-\item{criterion}{Criterion label.}
+\item{criterion}{Start-rule label stored in the state.}
 }
 \value{
 A list of class \code{"sp_mcmc_state"} with the fields supplied as arguments:
 current points \code{X}, scores \code{D}, Stein-kernel matrix \code{K0}, current step \code{j},
-running diagnostics, and method labels. It is not a result object; it is a
-snapshot passed to a start-point criterion so the criterion can decide where
-the next short MCMC candidate chain should start without recomputing scores
-or pairwise kernel values.
+running diagnostics, and method labels. It is a snapshot handed to a
+start-point criterion, not a result object.
 }
 \description{
 Creates the state object passed to custom SP-MCMC start-point criteria. The
@@ -63,10 +61,8 @@ those rules explicit: LAST uses \code{state$X}, RAND samples from its rows, and
 INFL uses \code{state$K0}. A custom rule should inspect the fields it needs and
 return one row index from \code{state$X}.
 
-This constructor is exported for users who write custom SP-MCMC start rules.
-The main \code{\link[=sp_mcmc]{sp_mcmc()}} loop creates this object internally before every short
-chain. By exposing the same object, the package lets custom rules be tested
-outside the full algorithm.
+\code{\link[=sp_mcmc]{sp_mcmc()}} builds this object internally before every short chain; building
+one directly lets a custom rule be tested outside the full algorithm.
 }
 \examples{
 sp_mcmc_state(j = 2, X = matrix(0, ncol = 1), D = matrix(0, ncol = 1),

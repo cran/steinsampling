@@ -20,27 +20,30 @@ stein_codescent(X0, score_function, kernel, n_iter, optimizer, seed = NULL)
 \item{seed}{Optional RNG seed.}
 }
 \value{
-A list with:
+An object of class \code{"stein_codescent"} with:
 \itemize{
 \item \code{X}: refined point matrix with the same dimensions as \code{X0}.
 \item \code{D}: target scores at the refined points.
+\item \code{objective}: numeric vector; \code{objective[it]} is the retained value of the
+coordinate objective at update \code{it}.
 \item \code{n_eval}: evaluation counts for each coordinate-descent update.
 \item \code{cum_n_eval}: cumulative evaluation counts.
 \item \code{kernel}: kernel used to define the Stein objective.
 }
 
-The return shape keeps the same core pieces as \code{\link[=stein_points]{stein_points()}} that are
-needed downstream: refined locations, their target scores, the kernel, and
-evaluation budgets. It does not store a full KSD trajectory because each
-coordinate-descent step replaces an existing row rather than appending a new
-prefix. To compute the final KSD, build
+The \code{objective} values are not KSDs. They differ from \eqn{n^2 KSD^2} by the
+kernel sum over the rows held fixed, which changes at every update, so they
+are comparable within an update but not across updates.
+
+There is no \code{ksd} trajectory, because each update replaces an existing row
+rather than extending a prefix. For the final KSD, build
 \code{K0 <- stein_kernel_matrix(kernel, out$X, out$D)} and evaluate
 \code{sqrt(sum(K0)) / nrow(out$X)}.
 }
 \description{
 Runs the budget-constrained refinement described with Stein Points: keep the
-number of points fixed, then repeatedly replace one existing point by a point
-that reduces the same KSD objective.
+number of points fixed, then repeatedly optimize one existing point under the
+same KSD objective.
 }
 \details{
 At iteration \code{it}, row \code{((it - 1) \%\% nrow(X0)) + 1} is optimized while the
@@ -51,13 +54,21 @@ where \code{r} is the row currently being replaced. This is the same doubled
 objective used by the greedy branch of \code{\link[=stein_points]{stein_points()}}, but the
 selected set size is fixed instead of growing by one point. The update is
 useful after a fixed budget of points has already been produced, because it
-improves the locations without increasing the point count.
+can improve the locations without increasing the point count.
 
-This function is below \code{\link[=stein_points]{stein_points()}} in the workflow. \code{\link[=stein_points]{stein_points()}}
-builds an initial sequence; \code{stein_codescent()} treats that sequence as a
-fixed-size design and improves one coordinate row at a time. It uses the same
-optimizer interface as \code{\link[=stein_points]{stein_points()}}, so a grid, Monte Carlo, or
-Nelder-Mead search can be reused for both construction and refinement.
+The paper defines each coordinate update by a global \code{argmin}, for which the
+current row is itself feasible and the KSD therefore cannot increase. The
+numerical grid, Monte Carlo, and Nelder--Mead searches are approximate and
+need not return a better point. After each search, this implementation
+evaluates the old and proposed rows under the same coordinate objective and
+keeps the proposal only when its value is no larger. This incumbent fallback
+restores the non-increase property without adding a score evaluation because
+both scores are already cached. When \code{X0} contains a single row the
+interaction sum is empty and the objective reduces to \eqn{k0(x,x)},
+matching the special branch in the authors' MATLAB code.
+
+The optimizer interface is the one used by \code{\link[=stein_points]{stein_points()}}, so a grid,
+Monte Carlo, or Nelder-Mead search serves both construction and refinement.
 }
 \examples{
 score <- function(X) -as.matrix(X)

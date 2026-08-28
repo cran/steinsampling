@@ -8,7 +8,7 @@ fssd_rand_test(
   X,
   score_function,
   J = 5,
-  nboot = 2000,
+  n_simulations = 2000,
   kernel = c("gaussian_rbf", "imq"),
   scaling = NULL,
   seed = NULL,
@@ -21,64 +21,48 @@ fssd_rand_test(
 \item{score_function}{Function returning the target score for each row of
 \code{X}; the output should have shape \verb{n x d}.}
 
-\item{J}{Number of test locations.}
+\item{J}{Number of test locations in \code{L}.}
 
-\item{nboot}{Number of simulated null draws used for the p-value.}
+\item{n_simulations}{Number of null draws.}
 
 \item{kernel}{\code{"gaussian_rbf"}, \code{"imq"}, or a \code{SteinKernel} object.}
 
-\item{scaling}{Optional positive squared kernel scale. \code{NULL} uses the square
-of the median distance between all sample-row pairs. This exact calculation
-has quadratic time and memory cost; large-sample callers should provide
-\code{scaling} explicitly.}
+\item{scaling}{Final positive squared kernel scale. \code{NULL} computes the
+squared exact all-pair median distance from the same \code{X}. A scale stored in
+a supplied \code{SteinKernel} object takes precedence.}
 
-\item{seed}{Optional RNG seed for the data split, random locations, and
-simulated null draws.}
+\item{seed}{Optional RNG seed for drawing \code{V} and simulating null draws.}
 
-\item{imq_beta}{IMQ exponent.}
+\item{imq_beta}{Finite IMQ exponent \eqn{\beta<0}.}
 }
 \value{
-An object of class \code{htest}. The main fields are \code{statistic} (one number
-labeled \code{fssd}), \code{p.value}, \code{method}, \code{data.name}, and \code{parameter}. The
-\code{info} field is a
-list with \code{variant = "rand"}, the sampled \verb{J x d} location matrix \code{V}, and
-the kernel name. The statistic is computed on all rows of \code{X}.
-
-The sampled locations are returned because they define the finite set in
-"Finite Set Stein Discrepancy"; two runs with different \code{V} are two different
-finite-feature tests even if the sample and target score are unchanged.
+An object of class \code{htest}. \code{statistic} is
+\eqn{S_n=n\widehat{FSSD}^2}; \code{p.value} is the same-sample plug-in p-value;
+and \code{info} contains the sampled \verb{J x d} matrix \code{V} representing \code{L}.
 }
 \description{
-Implements the FSSD-rand variant: draw the finite set of test locations from
-a Gaussian fitted to the sample, then compute the FSSD statistic and p-value
-on all rows.
+Fits a Gaussian distribution to \code{X}, draws the test locations
+\eqn{L = \{v_1,\ldots,v_J\}}, and uses all rows of \code{X} to compute the FSSD
+statistic and its plug-in null approximation.
 }
 \details{
-Having a density for the location distribution is only one condition in the
-paper's Theorem 1. Its almost-sure identification result also assumes that the
-state space is connected and open, the base kernel is \code{C0}-universal and real
-analytic, the required Stein-kernel and score-difference moments are finite,
-and the tail boundary condition for the Stein witness holds. The paper states
-that all of these conditions are assumed throughout and then specializes to
-the Gaussian kernel. This package's IMQ and custom-kernel options are
-extensions; for them, a location distribution with a density alone does not
-establish Theorem 1, and the caller is responsible for verifying the remaining
-kernel, moment, and boundary assumptions.
-
-This implementation draws locations from a practical Gaussian proposal with
-mean and covariance estimated from \code{X}. The resulting location matrix \code{V}
-has \code{J} rows and \code{ncol(X)} columns, and it is stored in \code{result$info$V} for
-inspection or reuse. This variant does not split the sample and does not
-optimize the locations.
-
-After the locations are drawn, \code{\link[=compute_tau]{compute_tau()}} builds the feature matrix,
-\code{\link[=compute_fssd_unbiased_stat]{compute_fssd_unbiased_stat()}} computes the U-statistic estimate, and
-\code{\link[=compute_fssd_null_pvalue]{compute_fssd_null_pvalue()}} simulates the null distribution. This gives a
-compact baseline FSSD test: the randomness is only in the location draw and
-in the Monte Carlo approximation of the null distribution.
+Let \eqn{\bar x} and \eqn{\widehat\Sigma_X} be the mean and fitted
+covariance of \code{X}. The locations are drawn independently as
+\deqn{
+v_j \sim N_d(\bar x,\widehat\Sigma_X),
+\qquad j=1,\ldots,J.
+}
+If \code{scaling = NULL}, the squared all-pair median distance is also computed
+from \code{X}. The same rows of \code{X} are then passed to \code{\link[=compute_tau]{compute_tau()}},
+\code{\link[=fssd_statistic]{fssd_statistic()}}, and \code{\link[=fssd_null_pvalue]{fssd_null_pvalue()}}. Thus \code{X} is used both to choose
+\code{L} and any default scale and to compute the statistic and null
+approximation. These choices are not independent of the tested rows, as
+required by the fixed-location null calibration, so the reported p-value is
+heuristic.
 }
 \examples{
 X <- matrix(rnorm(8), ncol = 1)
 score_function <- function(x) -as.matrix(x)
-fssd_rand_test(X, score_function, J = 1, nboot = 10)
+fssd_rand_test(X, score_function, J = 1, scaling = 1,
+               n_simulations = 10)
 }

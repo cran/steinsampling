@@ -13,9 +13,7 @@ sp_mcmc_select_start(criterion_obj, state)
 }
 \value{
 One integer: the one-based row index in \code{state$X} that should initialize the
-next short candidate chain. The function returns only the checked index
-because the state object already contains the point matrix, scores, and
-diagnostic history.
+next short candidate chain.
 }
 \description{
 Applies a criterion object to the current state and checks that the returned
@@ -27,16 +25,9 @@ custom start rules honest by requiring a single one-based row index into the
 current point set. The selected row becomes the first state of the short MCMC
 chain for the next SP-MCMC update.
 
-It is exported mainly for custom criterion development. A user can build a
-state with \code{\link[=sp_mcmc_state]{sp_mcmc_state()}}, build a criterion with \code{\link[=sp_mcmc_criterion]{sp_mcmc_criterion()}},
-and check that the criterion returns a legal index before running the full
-SP-MCMC algorithm.
-
-Inside \code{\link[=sp_mcmc]{sp_mcmc()}}, the returned index decides which already selected point
-becomes the initial state of the next short candidate chain. That index is
-also recorded in \code{selected_index} in the final output, because the start rule
-is part of the algorithm's behavior and affects the candidate set that is
-searched.
+Pairing it with \code{\link[=sp_mcmc_state]{sp_mcmc_state()}} and \code{\link[=sp_mcmc_criterion]{sp_mcmc_criterion()}} checks that a
+custom rule returns a legal index before the full algorithm is run. Inside
+\code{\link[=sp_mcmc]{sp_mcmc()}} the returned index is also recorded in \code{selected_index}.
 }
 \examples{
 state <- sp_mcmc_state(j = 2, X = matrix(0, ncol = 1),

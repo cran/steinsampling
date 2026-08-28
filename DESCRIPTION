@@ -1,8 +1,8 @@
 Package: steinsampling
-Title: Kernel Stein Discrepancy Goodness-of-Fit and Stein Sampling
-        Tools
-Version: 0.1.0
-Date: 2026-07-11
+Title: Kernelized Stein Discrepancy for Goodness-of-Fit Tests and Stein
+        Sampling
+Version: 0.1.1
+Date: 2026-08-27
 Authors@R: c(
     person("Junhao", "Gao",
            email = "jug049@ucsd.edu",
@@ -11,7 +11,6 @@ Authors@R: c(
            email = "eariascastro@ucsd.edu",
            role = "aut")
     )
-Maintainer: Junhao Gao <jug049@ucsd.edu>
 Description: Provides Stein-discrepancy goodness-of-fit tests and
     Stein-method-based sampling tools. The tests include kernel Stein
     discrepancy U- and V-statistics following Liu et al. (2016)
@@ -24,13 +23,14 @@ Description: Provides Stein-discrepancy goodness-of-fit tests and
     <doi:10.48550/arXiv.1803.10161>, Chen et al. (2019)
     <doi:10.48550/arXiv.1905.03673>, and Liu and Wang (2016)
     <doi:10.48550/arXiv.1608.04471>. Gaussian mixture utilities are included
-    for simulation, likelihoods, posterior probabilities, scores, and plots.
+    for constructing example targets, simulation, density evaluation, and
+    score callbacks.
 URL: https://github.com/junhao7622/steinsampling
 BugReports: https://github.com/junhao7622/steinsampling/issues
 License: GPL (>= 2)
 Encoding: UTF-8
 Depends: R (>= 4.0)
-Imports: stats, graphics, mvtnorm
+Imports: stats, mvtnorm (>= 0.9-9994)
 Suggests: testthat, withr
 Collate: 'steinsampling-package.R' 'stein_helpers.R' 'kernel_classes.R'
         'bootstrap.R' 'gmm_model.R' 'ksd_u_test.R' 'ksd_v_test.R'
@@ -39,8 +39,9 @@ Collate: 'steinsampling-package.R' 'stein_helpers.R' 'kernel_classes.R'
 Config/testthat/edition: 3
 NeedsCompilation: no
 Config/roxygen2/version: 8.0.0
-Packaged: 2026-07-12 00:15:35 UTC; junhao
+Packaged: 2026-08-28 05:59:24 UTC; junhao
 Author: Junhao Gao [aut, cre],
   Ery Arias-Castro [aut]
+Maintainer: Junhao Gao <jug049@ucsd.edu>
 Repository: CRAN
-Date/Publication: 2026-07-21 10:30:02 UTC
+Date/Publication: 2026-08-28 11:10:02 UTC

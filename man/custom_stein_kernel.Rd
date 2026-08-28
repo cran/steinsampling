@@ -2,110 +2,63 @@
 % Please edit documentation in R/kernel_classes.R
 \name{custom_stein_kernel}
 \alias{custom_stein_kernel}
-\title{Create a custom Stein kernel}
+\title{Create a Stein kernel from callbacks}
 \usage{
 custom_stein_kernel(
   eval_fn,
   grad_x_fn,
   trace_mixed_fn,
   grad_theta_v_fn = NULL,
-  custom_grad_mode = c("error", "analytic", "numeric")
+  scale_init = NULL,
+  set_scale_fn = NULL,
+  custom_grad_mode = c("analytic", "numeric")
 )
 }
 \arguments{
-\item{eval_fn}{Function that evaluates the base kernel.}
+\item{eval_fn, grad_x_fn, trace_mixed_fn}{Callbacks \verb{(X, Y, precon)}.}
 
-\item{grad_x_fn}{Function that evaluates the gradient with respect to \code{X}.}
+\item{grad_theta_v_fn}{Optional analytic FSSD-opt callback
+\verb{(X, vj, grads_X, g_block, obj)} returning \code{grad_vj} and, when the kernel
+exposes a scale, \code{grad_param}.}
 
-\item{trace_mixed_fn}{Function that evaluates the mixed derivative trace.}
+\item{scale_init}{Optional positive starting squared scale. Requires
+\code{set_scale_fn}.}
 
-\item{grad_theta_v_fn}{Optional function used to optimize FSSD test
-locations.}
+\item{set_scale_fn}{Optional \verb{(obj, scale2)} returning \code{obj} with its
+scale-dependent callbacks rebuilt.}
 
-\item{custom_grad_mode}{How to handle missing FSSD optimization gradients.}
+\item{custom_grad_mode}{\code{"analytic"} or location-only \code{"numeric"}.}
 }
 \value{
-A list with class \code{"SteinKernel_custom"} and \code{"SteinKernel"}. It stores the
-\code{eval_fn}, \code{grad_x_fn}, \code{trace_mixed_fn}, optional \code{grad_theta_v_fn}, and
-\code{custom_grad_mode}. Like \code{\link[=stein_kernel]{stein_kernel()}} output, it can enter the same public
-algorithms without exposing whether its implementation is built in or custom.
+A custom kernel specification.
 }
 \description{
-Wraps user-supplied functions for a base kernel and its derivatives in a
-\code{SteinKernel} object. This lets custom kernels use the same package
-interface as the built-in kernels.
+Create a Stein kernel from callbacks
 }
 \details{
-A custom kernel must provide three functions. \code{eval_fn(X, Y, precon)} returns
-the base kernel matrix
-\deqn{K_{ij} = k(X[i, ], Y[j, ]).}
-\code{grad_x_fn(X, Y, precon)} returns an array whose \verb{(i, j, l)} entry is
-\deqn{\partial k(X[i, ], Y[j, ]) / \partial X[i, l].}
-\code{trace_mixed_fn(X, Y, precon)} returns the matrix
-\deqn{T_{ij} = \sum_l
-\partial^2 k(X[i, ], Y[j, ]) /
-\partial X[i, l] \partial Y[j, l].}
-These are precisely the base-kernel pieces from which
-\code{\link[=stein_kernel_matrix]{stein_kernel_matrix()}} builds the Liu et al. Stein kernel \code{k0}.
+\code{eval_fn}, \code{grad_x_fn}, and \code{trace_mixed_fn} supply the kernel value, its
+first derivative, and its mixed-derivative trace. Each receives \code{X}, \code{Y},
+and \code{precon}; \code{precon} may be \code{NULL} and each callback decides whether to
+use it. For \eqn{X\in\mathbb R^{n_X\times d}} and
+\eqn{Y\in\mathbb R^{n_Y\times d}}, \code{eval_fn} returns the
+\eqn{n_X\times n_Y} matrix \eqn{k(X,Y)}, \code{grad_x_fn} the
+\eqn{n_X\times n_Y\times d} array \eqn{\nabla_x k(X,Y)}, and
+\code{trace_mixed_fn} the \eqn{n_X\times n_Y} matrix
+\eqn{\mathrm{tr}\{\nabla_x\nabla_y^\top k(X,Y)\}}. Kernel symmetry supplies
+\eqn{\nabla_y k} by reversing the arguments of \code{grad_x_fn}.
 
-The constructor validates computation, not KSD theorem assumptions. Shape
-checks do not establish symmetry, positive definiteness, membership in the
-target's Stein class, the boundary/integration-by-parts identity,
-\code{C0}-universality, or required Lipschitz and moment bounds; these remain the
-caller's responsibility.
-
-Liu et al.'s independent-sample U test requires a positive-definite base
-kernel in the relevant Stein class, plus the smoothness, integrability, and
-moment conditions supporting the Stein identity and degenerate bootstrap;
-its null limit specifically assumes a finite second moment of induced \code{k0}.
-
-Chwialkowski et al.'s V test uses \code{C0}-universality so zero discrepancy
-identifies the target; its wild bootstrap requires \code{k0} symmetric,
-positive-definite, null-degenerate, Lipschitz, and satisfying
-\eqn{E[k0(Z,Z)^2]<\infty}. Dependent observations additionally require the
-stationary tau-mixing and tuning assumptions in \code{\link[=ksd_v_test]{ksd_v_test()}}. Correct
-matrix and array shapes alone therefore do not define a valid KSD test.
-
-The cross term derives from \code{grad_x_fn(X,Y,precon)} and its swapped call,
-appropriate for symmetric two-argument kernels whose second-argument
-derivative follows by swapping and transposing. Nonsymmetric kernels need a
-full S3 class with \code{cross_kernel()}.
-
-For an ordinary \verb{(X,Y)} kernel, \code{\link[=stein_kernel_matrix]{stein_kernel_matrix()}} directly assembles
-the four Stein terms. Because the wrapper passes no target scores to the three
-functions, score-dependent kernels such as \code{\link[=stein_kernel_imq_score]{stein_kernel_imq_score()}} need a
-full S3 class with their own \code{stein_kernel_matrix()} method.
-
-FSSD optimization additionally needs \code{grad_theta_v_fn}, or
-\code{custom_grad_mode = "numeric"} for slower numerical differentiation. The
-analytic function accepts \code{X}, \code{vj}, \code{grads_X}, \code{g_block}, and \code{obj}, and
-returns test-location derivative \code{grad_vj} plus optional scalar
-kernel-parameter derivative \code{grad_param}.
-
-This functional alternative to a full S3 class stores explicit formulas and
-lets existing methods call them with built-in matrix shapes. Relative to
-\code{\link[=stein_kernel]{stein_kernel()}}, only how the base kernel and derivatives are supplied
-changes: top-level algorithms still receive one \code{SteinKernel}, with samples
-and scores interpreted row-wise.
+KSD uses all three callbacks; FSSD uses only \code{eval_fn} and \code{grad_x_fn}. For
+FSSD-opt a custom kernel must provide \code{grad_theta_v_fn} or use
+\code{custom_grad_mode = "numeric"}. A custom kernel can update its scale when
+\code{scale_init} and \code{set_scale_fn} are supplied; that path requires
+\code{grad_theta_v_fn}, because numeric mode differentiates the test locations
+only.
 }
 \examples{
-eval_fn <- function(X, Y = NULL, precon = NULL) {
-  X <- as.matrix(X)
-  Y <- if (is.null(Y)) X else as.matrix(Y)
-  diff <- outer(X[, 1], Y[, 1], "-")
-  exp(-0.5 * diff^2)
-}
-grad_fn <- function(X, Y = NULL, precon = NULL) {
-  X <- as.matrix(X)
-  Y <- if (is.null(Y)) X else as.matrix(Y)
-  diff <- outer(X[, 1], Y[, 1], "-")
-  array(-diff * exp(-0.5 * diff^2), dim = c(nrow(X), nrow(Y), 1))
-}
-trace_fn <- function(X, Y = NULL, precon = NULL) {
-  X <- as.matrix(X)
-  Y <- if (is.null(Y)) X else as.matrix(Y)
-  diff <- outer(X[, 1], Y[, 1], "-")
-  (1 - diff^2) * exp(-0.5 * diff^2)
-}
-custom_stein_kernel(eval_fn, grad_fn, trace_fn)
+rbf <- stein_kernel("gaussian_rbf", h = 1)
+custom_stein_kernel(
+  eval_fn        = function(X, Y = NULL, precon = NULL) eval_kernel(rbf, X, Y),
+  grad_x_fn      = function(X, Y = NULL, precon = NULL) grad_x_kernel(rbf, X, Y),
+  trace_mixed_fn = function(X, Y = NULL, precon = NULL) trace_mixed_kernel(rbf, X, Y)
+)
 }

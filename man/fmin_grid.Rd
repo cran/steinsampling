@@ -19,9 +19,7 @@ evaluates the objective on a Cartesian grid and returns \code{x_min}, \code{d_mi
 \code{f_min}, and \code{n_eval}. \code{x_min} is the grid row with the smallest objective,
 \code{d_min} is the target score at that row, \code{f_min} is the objective value used
 by \code{\link[=stein_points]{stein_points()}} to update its KSD accumulator, and \code{n_eval} is the number
-of grid rows scored. Returning the same four fields as \code{\link[=fmin_mc]{fmin_mc()}} and
-\code{\link[=fmin_nm]{fmin_nm()}} makes the deterministic grid search interchangeable with the
-stochastic and local optimizers.
+of grid rows scored.
 }
 \description{
 Creates the deterministic grid-search function used in the Stein Points

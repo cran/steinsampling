@@ -13,10 +13,11 @@ mala(log_p, score_function, x0, h, Sigma = NULL, m_iter)
 
 \item{x0}{Initial state vector.}
 
-\item{h}{Positive step size.}
+\item{h}{Positive step size. The proposal noise has covariance \code{h * Sigma},
+so \code{h} is the square of the step size used by the authors' \code{mala.m}.}
 
-\item{Sigma}{Symmetric positive-definite proposal covariance or
-preconditioning matrix.}
+\item{Sigma}{Symmetric positive-definite proposal preconditioner, used for
+both the drift and the noise. If \code{NULL}, the identity matrix is used.}
 
 \item{m_iter}{Number of returned chain rows, including the initial state in
 row 1. The function therefore makes \code{m_iter - 1} Markov transitions.}
@@ -33,23 +34,33 @@ SP-MCMC. MALA uses the target score to drift proposals toward high-density
 regions and then applies a Metropolis correction.
 }
 \details{
-From the current state \code{x}, MALA proposes a point near
-\deqn{x + (h / 2) s_p(x) Sigma^{-1}.}
-More explicitly, with the row-vector convention used by the code,
-\deqn{y = x + (h / 2) s_p(x) Sigma^{-1} + \sqrt{h} z,
-      \quad z \sim N(0, Sigma).}
-Thus the proposal noise has covariance \code{h * Sigma}. The acceptance step
-compares the target log density and the two proposal densities, so accepted
-states leave the distribution described by \code{log_p} invariant. The returned
-score matrix \code{D} is included because SP-MCMC can reuse these scores when
-scoring the candidate path.
+With the row-vector convention used by the code, the proposal from the
+current state \code{x} is
+\deqn{y = x + (h / 2) s_p(x) Sigma + \sqrt{h} z,
+      \quad z \sim N(0, Sigma),}
+so \code{Sigma} preconditions the drift and the noise alike and the proposal
+noise has covariance \code{h * Sigma}. The acceptance step compares the target
+log density and the two proposal densities, so accepted states leave the
+distribution described by \code{log_p} invariant. The returned score matrix \code{D}
+is included because SP-MCMC can reuse these scores when scoring the
+candidate path.
 
 When \code{Sigma} is the identity matrix this reduces to the basic MALA proposal
-written in the SP-MCMC appendix,
-\eqn{y = x + (h/2)\nabla\log p(x) + \sqrt{h}z}. The general \code{Sigma} argument
-is the matrix used by this implementation's proposal calculation; it is
-separate from the \code{M} or \code{precon} matrix that may be stored inside an IMQ
-Stein kernel for computing \code{k0}.
+\eqn{y = x + (h/2)\nabla\log p(x) + \sqrt{h}z}. Appendix A.5 of the SP-MCMC
+paper prints \eqn{Sigma^{-1}} in the drift while keeping \eqn{N(0, Sigma)}
+noise; the authors' released \code{mala.m} uses the same matrix in both places,
+which is the standard preconditioned Langevin discretization, and this
+implementation follows the released code. Taking \eqn{Sigma} to be an
+approximation of the target covariance therefore scales the drift correctly.
+
+Two conventions are worth stating because they differ from the released
+MATLAB code and from the Stein kernel. First, \code{mala.m} parameterizes the
+chain by the square root of this step size, so its \code{h} corresponds to
+\code{sqrt(h)} here. Second, \code{Sigma} is a proposal preconditioner and is
+unrelated to the \code{precon} matrix of an IMQ Stein kernel: SP-MCMC
+Equation 6 uses \eqn{Lambda^{-1}} inside \code{k0}, so a run that preconditions
+both with the same target covariance passes \code{Sigma = S} here and
+\code{precon = solve(S)} to \code{\link[=stein_kernel]{stein_kernel()}}.
 
 MALA is a transition kernel, not a full sampler interface. It is exported so
 SP-MCMC users can inspect or replace the candidate-chain step. \code{\link[=sp_mcmc]{sp_mcmc()}}

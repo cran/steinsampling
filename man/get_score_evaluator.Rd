@@ -10,33 +10,22 @@ get_score_evaluator(model)
 \item{model}{Gaussian mixture model returned by \code{\link[=gmm]{gmm()}}.}
 }
 \value{
-A function with signature \verb{function(X)}. For matrix input it returns an
-\verb{n x d} score matrix for new samples, using cached inverse covariance
-matrices from \code{model}. For vector input it returns a numeric vector, matching
-the package's convention that a vector is a batch of one-dimensional samples
-when \code{model$d == 1} and one multivariate sample when \code{model$d > 1}. The main
-Stein routines call score functions with matrix inputs, so they receive the
-matrix form needed to align rows of samples and scores.
+A function with signature \verb{function(X)}. For an \verb{n x d} matrix, it returns
+the corresponding \verb{n x d} score matrix. For vector input, it returns a
+vector: multiple one-dimensional scores when \code{model$d == 1}, or one
+length-\code{d} score when \code{model$d > 1}.
 }
 \description{
-Returns a function of \code{X} only, ready to pass to routines that need a score
-function.
+Returns a \verb{function(X)} that evaluates the score of a \code{\link[=gmm]{gmm()}} object.
 }
 \details{
-Many Stein routines ask for a score function with signature \verb{function(X)}.
-This helper stores the model and its inverse covariance matrices once, then
-returns a function that evaluates the Gaussian mixture score for new samples.
-
-This is the preferred bridge from the Gaussian mixture helpers to the main
-Stein algorithms. Instead of repeatedly passing both \code{model} and \code{X} to
-\code{\link[=scorefunctiongmm]{scorefunctiongmm()}}, create \code{score <- get_score_evaluator(model)} once and
-then pass \code{score} to \code{\link[=ksd_u_test]{ksd_u_test()}}, \code{\link[=fssd_test]{fssd_test()}}, \code{\link[=stein_points]{stein_points()}},
-\code{\link[=sp_mcmc]{sp_mcmc()}}, or \code{\link[=stein_thinning]{stein_thinning()}}.
-
-The closure caches the inverse covariance matrices because they depend only
-on the mixture model, not on the evaluation points. That design keeps the
-returned score function cheap enough to call repeatedly inside iterative
-algorithms such as SVGD, Stein Points, and SP-MCMC.
+Define the component responsibility
+\deqn{r_k(x)=
+\frac{w_k\phi(x;\mu_k,\Sigma_k)}
+{\sum_{\ell=1}^K w_\ell\phi(x;\mu_\ell,\Sigma_\ell)}.}
+The returned function evaluates
+\deqn{s_p(x)=\nabla_x\log p(x)
+=\sum_{k=1}^K r_k(x)\Sigma_k^{-1}(\mu_k-x).}
 }
 \examples{
 model <- gmm()

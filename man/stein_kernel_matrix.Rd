@@ -2,78 +2,31 @@
 % Please edit documentation in R/kernel_classes.R
 \name{stein_kernel_matrix}
 \alias{stein_kernel_matrix}
-\title{Compute pairwise Stein kernel values}
+\title{Assemble the pairwise Stein-kernel matrix}
 \usage{
 stein_kernel_matrix(kernel, X, grads, Y = NULL, grads_Y = NULL, ...)
 }
 \arguments{
-\item{kernel}{A Stein kernel object.}
+\item{kernel}{A \code{SteinKernel} object.}
 
-\item{X}{Numeric matrix with samples in rows.}
+\item{X, Y}{Numeric point matrices; \code{Y = NULL} uses \code{X}.}
 
-\item{grads}{Score matrix for \code{X}.}
+\item{grads, grads_Y}{Score matrices matching \code{X} and \code{Y}.}
 
-\item{Y}{Optional second sample matrix. If \code{NULL}, \code{Y = X}.}
-
-\item{grads_Y}{Optional score matrix for \code{Y}. Required when \code{Y} is supplied.}
-
-\item{...}{Additional arguments passed to kernel methods.}
+\item{...}{Optional \code{precon} overriding \code{kernel$precon}.}
 }
 \value{
-Numeric matrix. If \code{Y = NULL}, the matrix is \verb{nrow(X) x nrow(X)} and entry
-\verb{(i, j)} is \code{k0(X[i, ], X[j, ])}. If \code{Y} is supplied, the matrix is
-\verb{nrow(X) x nrow(Y)} and entry \verb{(i, j)} is \code{k0(X[i, ], Y[j, ])}. The matrix
-supports each algorithm's use of the pairwise object: KSD
-averaging, Stein Points/SP-MCMC accumulation, or Stein-thinning row choice.
+Numeric \eqn{n_X\times n_Y} matrix \eqn{K_{ij}=k_{0,p}(x_i,y_j)}.
 }
 \description{
-Combines a base kernel, its derivatives, and the target scores to form the
-Stein kernel \code{k0}. This is the common matrix object used by the package's KSD
-tests, FSSD features, Stein thinning, Stein Points, and SP-MCMC.
+Assemble the pairwise Stein-kernel matrix
 }
 \details{
-Liu, Lee, and Jordan call this \verb{u_q(x,x')} for target \code{q}; here the same
-quantity is \code{k0(x,y)} for target \code{p}, since it also serves Stein thinning and
-Stein Points. Given score \verb{s_p(x)=\\nabla_x\\log p(x)} and base kernel \code{k},
-matrix entries are
-\deqn{
-k0(x, y) =
-s_p(x)^T s_p(y) k(x, y)
-+ s_p(x)^T \nabla_y k(x, y)
-+ s_p(y)^T \nabla_x k(x, y)
-+ \nabla_x \cdot \nabla_y k(x, y).
-}
-These are, respectively, score-score coupling through \code{k}, two score-kernel
-derivative couplings, and the mixed-derivative trace obtained by applying the
-Langevin Stein operator in both arguments.
-
-Points and scores must share row order: \code{X[i, ]} pairs with \code{grads[i, ]}, and
-supplied \code{Y[j, ]} with \code{grads_Y[j, ]}. Omitting \code{Y} reuses \code{X} and its scores
-on both sides. This function never estimates scores; top-level functions such
-as \code{\link[=ksd_u_test]{ksd_u_test()}} evaluate \code{score_function} first.
-
-KSD averages these entries; Stein Points and SP-MCMC use them to construct
-support points; Stein thinning scores which fixed sample row to retain; and
-FSSD applies the same Stein operator at finite locations through
-\code{\link[=compute_tau]{compute_tau()}}. \code{Y} produces a rectangular \code{X}-by-\code{Y} matrix; omitting it
-produces the square \code{X} matrix.
-
-This central layer prevents higher-level routines from reimplementing \code{k0}.
-Gaussian RBF and position-distance IMQ use fused versions of the same
-formula. \code{\link[=custom_stein_kernel]{custom_stein_kernel()}} objects use the default method, assembling
-\code{k0} from three leaf functions when the base kernel depends only on \verb{(X,Y)}.
-A target-dependent kernel whose value or derivatives require scores instead
-needs a full \verb{stein_kernel_matrix.<class>()} method;
-\code{\link[=stein_kernel_imq_score]{stein_kernel_imq_score()}} is the built-in example.
-
-In contrast, \code{\link[=compute_tau]{compute_tau()}} stores FSSD feature vectors
-\verb{s_p(x_i)k(x_i,v_j)+\\nabla_x k(x_i,v_j)} before inner products, rather than
-scalar pairwise \code{k0(x_i,y_j)}; both use the same base methods and score
-convention.
+With \eqn{s_p(x)=\nabla_x\log p(x)},
+\deqn{k_{0,p}(x,y)=s_p(x)^\top s_p(y)k(x,y)+s_p(x)^\top\nabla_y k(x,y)
+  +s_p(y)^\top\nabla_x k(x,y)+\mathrm{tr}\{\nabla_x\nabla_y^\top k(x,y)\}.}
 }
 \examples{
 X <- matrix(c(-1, 0, 1), ncol = 1)
-grads <- -X
-kernel <- stein_kernel(type = "gaussian_rbf", h = 1)
-stein_kernel_matrix(kernel, X, grads)
+stein_kernel_matrix(stein_kernel("gaussian_rbf", h = 1), X, -X)
 }

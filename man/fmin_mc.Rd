@@ -22,10 +22,6 @@ An optimizer function with signature \verb{function(objective, X_curr, t)}. It
 returns a list with \code{x_min} (best candidate row), \code{d_min} (score at that
 row), \code{f_min} (objective value), and \code{n_eval} (number of candidates scored).
 This is the interface expected by \code{\link[=stein_points]{stein_points()}} and \code{\link[=stein_codescent]{stein_codescent()}}.
-The four fields are separated because the main Stein Points loop needs all
-of them: \code{x_min} is appended to the design, \code{d_min} is cached so the score is
-not recomputed, \code{f_min} updates the running KSD sum, and \code{n_eval} records the
-search cost for budget comparisons.
 }
 \description{
 Creates a candidate-search function for \code{\link[=stein_points]{stein_points()}}. It implements the

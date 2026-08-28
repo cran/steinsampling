@@ -9,7 +9,7 @@ fssd_test(
   score_function,
   variant = c("opt", "rand"),
   J = 5,
-  nboot = 2000,
+  n_simulations = 2000,
   kernel = c("gaussian_rbf", "imq"),
   scaling = NULL,
   train_ratio = 0.2,
@@ -28,109 +28,67 @@ fssd_test(
 \item{score_function}{Function returning the target score for each row of
 \code{X}; the output should have shape \verb{n x d}.}
 
-\item{variant}{\code{"rand"} draws test locations from a Gaussian fitted to the
-data. \code{"opt"} tunes test locations and the kernel scale on a training
-split.}
+\item{variant}{\code{"opt"} (default) or \code{"rand"}.}
 
-\item{J}{Number of test locations.}
+\item{J}{Number of test locations in \code{L}.}
 
-\item{nboot}{Number of simulated null draws used for the p-value.}
+\item{n_simulations}{Number of null draws.}
 
 \item{kernel}{\code{"gaussian_rbf"}, \code{"imq"}, or a \code{SteinKernel} object.}
 
-\item{scaling}{Optional positive squared kernel scale. \code{NULL} uses the square
-of the median distance between all sample-row pairs. This exact calculation
-has quadratic time and memory cost; large-sample callers should provide
-\code{scaling} explicitly.}
+\item{scaling}{Positive squared kernel scale. It is final for FSSD-rand and
+an initial value for FSSD-opt. \code{NULL} uses a median-based value. A scale in
+a supplied \code{SteinKernel} takes precedence.}
 
-\item{train_ratio}{Requested fraction of samples used to tune FSSD-opt. The
-split is rounded down and adjusted so both training and test sets contain
-at least two rows.}
+\item{train_ratio}{Fraction of rows requested for FSSD-opt training.}
 
-\item{gamma}{Small positive regularizer used by the FSSD-opt objective.}
+\item{gamma}{Positive regularizer in the FSSD-opt criterion.}
 
-\item{maxit}{Maximum number of L-BFGS-B optimizer iterations for FSSD-opt.}
+\item{maxit}{Maximum L-BFGS-B iterations for FSSD-opt.}
 
-\item{locs_bounds_frac}{Width of the box used to bound optimized test
-locations, measured in fitted standard deviations.}
+\item{locs_bounds_frac}{Location-bound width in fitted standard deviations.}
 
 \item{scale_lower, scale_upper}{Bounds for the optimized squared kernel
 scale.}
 
-\item{seed}{Optional RNG seed for the data split, random locations, and
-simulated null draws.}
+\item{seed}{Optional RNG seed.}
 
-\item{imq_beta}{IMQ exponent.}
+\item{imq_beta}{Finite IMQ exponent \eqn{\beta<0}.}
 }
 \value{
-An object of class \code{htest}. For both variants the list contains:
-\itemize{
-\item \code{statistic}: one number labeled \code{fssd}; this is the unbiased estimate of
-squared FSSD for the final test locations.
-\item \code{p.value}: right-tail p-value from simulated asymptotic null draws.
-\item \code{method}: text naming the FSSD variant and kernel.
-\item \code{data.name}: expression used for \code{X}.
-\item \code{parameter}: numeric vector with \code{nboot}, \code{J}, and the final squared
-kernel \code{scaling}; the optimized variant also records \code{train_ratio} and
-\code{gamma}.
-\item \code{info}: list with the variant label, final location matrix \code{V}, kernel
-name, and for the optimized variant, optimization diagnostics.
-}
-
-The \code{htest} fields provide standard hypothesis-test printing; \code{info} retains
-\code{V} because a location-free p-value is difficult to reproduce or interpret.
+An \code{htest} object. \code{statistic} is
+\eqn{S_{\tilde n}=\tilde n\widehat{FSSD}^2}; \code{p.value} is its simulated
+right-tail p-value; \code{info} records \code{L} and variant-specific diagnostics.
 }
 \description{
-Runs the FSSD test of Jitkrittum et al. The test compares a sample with a
-target score by evaluating the Stein witness function at a small finite set
-of test locations. Use \code{variant = "rand"} for random locations and
-\code{variant = "opt"} to learn locations, and for built-in kernels the kernel
-scale, on a training split.
+Runs one of two Finite Set Stein Discrepancy tests. With
+\code{variant = "opt"}, the test locations
+\eqn{L = \{v_1,\ldots,v_J\}} are selected on training rows. For the
+built-in Gaussian RBF and IMQ kernels, and for custom kernels created with
+\code{set_scale_fn}, the squared kernel scale \eqn{h^2} is selected as well. The
+statistic and null calibration use held-out rows. With \code{variant = "rand"},
+all rows of \code{X} are used both to select \code{L} and any default scale and to
+compute the statistic and null approximation, so its p-value is heuristic.
 }
 \details{
-FSSD chooses \code{J} locations \eqn{v_1,\ldots,v_J} and checks whether the Stein
-witness function vanishes there. Write the target density as \code{p} with score
-\eqn{s_p(x) = \nabla_x \log p(x)}. For each sample point \code{x_i} and location
-\code{v_j}, the Stein feature is
-\deqn{\xi_p(x_i, v_j) = s_p(x_i) k(x_i, v_j) + \nabla_x k(x_i, v_j).}
-Here \code{k} is the base kernel, and the gradient is with respect to sample
-argument \code{x_i}, not location argument \code{v_j}; each location contributes a
-length-\code{d} vector.
-
-Let \eqn{\Xi(x)} be the \verb{d x J} matrix with column
-\eqn{\xi_p(x,v_j)/\sqrt{dJ}} and let
-\eqn{\tau(x)=vec(\Xi(x))} stack its columns into length \code{d * J}, the row
-representation returned by \code{\link[=compute_tau]{compute_tau()}}. Then
-\deqn{\Delta(x, y) = \tau(x)^T \tau(y)
-     = \frac{1}{dJ}\sum_{j=1}^J
-       \xi_p(x, v_j)^T \xi_p(y, v_j)}
-is the FSSD U-statistic kernel; feature normalization by \eqn{\sqrt{dJ}}
-produces the paper's \eqn{1/(dJ)} inner-product factor.
-
-Averaging over distinct sample pairs gives
+\code{variant = "opt"} calls \code{\link[=fssd_opt_test]{fssd_opt_test()}}, and \code{variant = "rand"} calls
+\code{\link[=fssd_rand_test]{fssd_rand_test()}}. Both variants construct the FSSD features, compute
 \deqn{
-\widehat{FSSD}^2 =
-\frac{1}{n(n - 1)} \sum_{i \ne l} \tau(x_i)^T \tau(x_l).
+S_{\tilde n} = \tilde n\widehat{FSSD}^2,
 }
-\code{\link[=compute_tau]{compute_tau()}} returns the \verb{n x (d * J)} matrix with row \code{i} equal to
-\code{tau(x_i)}; the unbiased statistic is computed without storing every
-pairwise inner product.
-
-The p-value uses the paper's asymptotic null distribution. Estimate
-\eqn{\hat\Sigma = n^{-1}\sum_i(\tau(x_i)-\bar\tau)
-(\tau(x_i)-\bar\tau)^T}, compute its eigenvalues, and simulate null draws
-\eqn{\sum_j\lambda_j(Z_j^2-1)}. Large values indicate disagreement between
-sample and target score. The \code{"opt"} variant first uses part of the data to
-choose useful locations.
-
-Unlike \code{\link[=ksd_u_test]{ksd_u_test()}} and \code{\link[=ksd_v_test]{ksd_v_test()}}, which build all pairwise
-\code{k0(x_i,x_j)} values through \code{\link[=stein_kernel_matrix]{stein_kernel_matrix()}}, FSSD uses a finite
-location matrix \code{V} and \code{\link[=compute_tau]{compute_tau()}}. It retains the same \code{X}, target-score
-convention, and kernel layer, while adding \code{J} and, for \code{"opt"}, a training
-stage that selects \code{V} and the built-in kernel scale.
+and perform the plug-in null calibration implemented by
+\code{\link[=fssd_null_pvalue]{fssd_null_pvalue()}}. Here \eqn{\tilde n = n_{test}} for FSSD-opt and
+\eqn{\tilde n = n} for FSSD-rand. The functions \code{\link[=compute_tau]{compute_tau()}},
+\code{\link[=fssd_statistic]{fssd_statistic()}}, and \code{\link[=fssd_null_pvalue]{fssd_null_pvalue()}} expose these calculations
+separately.
 }
 \examples{
-X <- matrix(rnorm(8), ncol = 1)
+X <- matrix(rnorm(40), ncol = 1)
 score_function <- function(x) -as.matrix(x)
-fssd_test(X, score_function, variant = "rand", J = 1, nboot = 10)
+
+fssd_test(X, score_function, J = 1, scaling = 1,
+          train_ratio = 0.5, maxit = 2, n_simulations = 10)
+
+fssd_test(X, score_function, variant = "rand", J = 1,
+          scaling = 1, n_simulations = 10)
 }

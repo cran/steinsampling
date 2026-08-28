@@ -23,9 +23,9 @@ test_that("optimizer factories return result records", {
   expect_gt(nm_res$n_eval, 0)
 })
 
-test_that("sample_proposal_box draws within requested bounds", {
+test_that("the boxed proposal draws within requested bounds", {
   set.seed(8)
-  draws <- steinsampling:::sample_proposal_box(
+  draws <- steinsampling:::.sample_proposal_box(
     n = 5,
     lb = -1,
     ub = 1,
@@ -42,11 +42,11 @@ test_that("sample_proposal_box draws within requested bounds", {
 })
 
 test_that("adaptive proposals switch on the explicit iteration", {
-  early <- steinsampling:::sample_proposal_box(
+  early <- steinsampling:::.sample_proposal_box(
     3, -20, 20, 0, matrix(1e-12), 0,
     X_curr = matrix(10, ncol = 1), delay = 2, t = 2
   )
-  late <- steinsampling:::sample_proposal_box(
+  late <- steinsampling:::.sample_proposal_box(
     3, -20, 20, 0, matrix(1e-12), 0,
     X_curr = matrix(10, ncol = 1), delay = 2, t = 3
   )
@@ -94,11 +94,51 @@ test_that("stein_thinning rejects non-positive and non-integer m", {
   X <- small_x(5)
   S <- normal_score(X)
 
-  expect_error(stein_thinning(X, S = S, m = 0), "m must be a positive integer")
-  expect_error(stein_thinning(X, S = S, m = 1.5), "m must be a positive integer")
+  expect_error(stein_thinning(X, S = S, m = 0), "`m` must be a positive integer")
+  expect_error(stein_thinning(X, S = S, m = 1.5), "`m` must be a positive integer")
   expect_error(
     stein_thinning(X, S = S, m = 1, pre = "sclmed"),
     "m > 1"
+  )
+  expect_error(
+    stein_thinning(X, S = S, m = 2, pre = "med", pre_subsample = 2.9),
+    "positive integer"
+  )
+})
+
+test_that("stein_thinning rejects empty or non-finite samples and scores", {
+  X <- matrix(c(-1, 1), ncol = 1)
+  S <- normal_score(X)
+
+  expect_error(
+    stein_thinning(matrix(numeric(), nrow = 0, ncol = 1), S = matrix(numeric(), 0, 1), m = 2),
+    "`X` must have nrow >= 1"
+  )
+  expect_error(
+    stein_thinning(matrix(c(0, Inf), ncol = 1), S = S, m = 2),
+    "`X` must contain only finite numeric values"
+  )
+  expect_error(
+    stein_thinning(matrix(c("a", "b"), ncol = 1), S = S, m = 2),
+    "`X` must contain only finite numeric values"
+  )
+  expect_error(
+    stein_thinning(X, S = matrix(numeric(), nrow = 0, ncol = 1), m = 2),
+    "`S` must have nrow >= 1"
+  )
+  expect_error(
+    stein_thinning(X, S = matrix(c(0, NA_real_), ncol = 1), m = 2),
+    "`S` must contain only finite numeric values"
+  )
+  expect_error(
+    stein_thinning(
+      X, score_function = function(X) matrix(c(0, NaN), ncol = 1), m = 2
+    ),
+    "`score_function\\(X\\)` must be a finite numeric matrix"
+  )
+  expect_error(
+    stein_thinning(X, S = matrix(c("a", "b"), ncol = 1), m = 2),
+    "`S` must contain only finite numeric values"
   )
 })
 
@@ -144,6 +184,70 @@ test_that("stein_points returns point and score matrices", {
 
   expect_equal(dim(points$X), c(2L, 1L))
   expect_equal(dim(points$D), c(2L, 1L))
+  expect_identical(class(points), "stein_points")
+})
+
+test_that("first-point budget counts log density rows and only one winning score", {
+  score_rows <- 0L
+  log_p_rows <- 0L
+  counted_score <- function(X) {
+    X <- as.matrix(X)
+    score_rows <<- score_rows + nrow(X)
+    -X
+  }
+  counted_log_p <- function(X) {
+    X <- as.matrix(X)
+    log_p_rows <<- log_p_rows + nrow(X)
+    -0.5 * rowSums(X^2)
+  }
+  opt <- fmin_grid(lb = -1, ub = 1, n0 = 3, grow = FALSE)
+
+  points <- stein_points(
+    counted_score, stein_kernel(type = "gaussian_rbf", h = 1),
+    n_points = 2, d = 1, optimizer = opt, log_p = counted_log_p
+  )
+
+  expect_equal(points$n_eval, c(4L, 3L))
+  expect_equal(log_p_rows, 3L)
+  expect_equal(score_rows, 4L)
+  expect_equal(sum(points$n_eval), log_p_rows + score_rows)
+})
+
+test_that("truncated Nelder-Mead penalizes an infeasible probe and continues", {
+  kernel <- stein_kernel(type = "imq", c = 1, beta = -0.5)
+  log_p <- function(X) -0.5 * rowSums(as.matrix(X)^2)
+  opt <- fmin_nm(
+    lb = -5, ub = 5, n_res = 1, mu0 = 0, Sigma0 = matrix(1e-8),
+    control = list(maxit = 100, reltol = 1e-6)
+  )
+  r2 <- 1.2
+
+  set.seed(1)
+  points <- suppressWarnings(stein_points(
+    normal_score, kernel,
+    n_points = 2, d = 1, optimizer = opt, log_p = log_p,
+    c2 = 2 * log(2) / r2, truncation = "upper"
+  ))
+
+  expect_lte(
+    steinsampling:::.k0_diag(kernel, points$X[2, , drop = FALSE],
+                            points$D[2, , drop = FALSE]),
+    r2 + 1e-8
+  )
+})
+
+test_that("batch search still rejects an all-infeasible truncated set", {
+  kernel <- stein_kernel(type = "imq", c = 1, beta = -0.5)
+  opt <- fmin_grid(lb = -1, ub = 1, n0 = 3, grow = FALSE)
+
+  expect_error(
+    stein_points(
+      normal_score, kernel,
+      n_points = 2, d = 1, optimizer = opt, x_init = 0,
+      c2 = 2 * log(2) / 0.5, truncation = "upper"
+    ),
+    "found no candidate"
+  )
 })
 
 test_that("stein_codescent preserves point and score matrices", {
@@ -159,6 +263,54 @@ test_that("stein_codescent preserves point and score matrices", {
 
   expect_equal(dim(refined$X), c(2L, 1L))
   expect_equal(dim(refined$D), c(2L, 1L))
+  expect_identical(class(refined), "stein_codescent")
+})
+
+test_that("negative KSD squared values warn", {
+  kernel <- list(
+    k0_matrix = function(X, S_X, Y, S_Y) matrix(-1, nrow(X), nrow(Y)),
+    k0_diag = function(X, S_X) rep(-1, nrow(X))
+  )
+
+  expect_warning(
+    stein_points(normal_score, kernel, 1, 1, x_init = 0),
+    "KSD squared value is negative"
+  )
+})
+
+test_that("stein_codescent handles the one-point MATLAB special case", {
+  kernel <- stein_kernel(type = "gaussian_rbf", h = 1)
+  opt <- fmin_grid(lb = -1, ub = 1, n0 = 5, grow = FALSE)
+
+  refined <- stein_codescent(
+    matrix(0.75, nrow = 1),
+    normal_score, kernel,
+    n_iter = 1, optimizer = opt
+  )
+
+  expect_equal(refined$X, matrix(0, nrow = 1))
+  expect_equal(refined$D, matrix(0, nrow = 1))
+  expect_equal(refined$n_eval, 6L)
+})
+
+test_that("stein_codescent rejects an approximate update that increases KSD", {
+  kernel <- stein_kernel(type = "gaussian_rbf", h = 1)
+  X0 <- matrix(c(-1, 1), ncol = 1)
+  D0 <- normal_score(X0)
+  opt <- fmin_grid(lb = 10, ub = 11, n0 = 2, grow = FALSE)
+  ksd <- function(X, D) {
+    sqrt(sum(stein_kernel_matrix(kernel, X, D))) / nrow(X)
+  }
+
+  refined <- stein_codescent(
+    X0, normal_score, kernel,
+    n_iter = 1, optimizer = opt
+  )
+
+  expect_equal(refined$X, X0)
+  expect_equal(refined$D, D0)
+  expect_lte(ksd(refined$X, refined$D), ksd(X0, D0))
+  expect_equal(refined$n_eval, 4L)
 })
 
 test_that("fixed-KSD point algorithms reject a lazy Gaussian RBF", {

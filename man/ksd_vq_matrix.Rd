@@ -2,7 +2,7 @@
 % Please edit documentation in R/ksd_v_test.R
 \name{ksd_vq_matrix}
 \alias{ksd_vq_matrix}
-\title{Build the Stein-kernel matrix for the KSD V-statistic}
+\title{Build the Stein-kernel matrix for KSD-V}
 \usage{
 ksd_vq_matrix(
   X,
@@ -13,50 +13,32 @@ ksd_vq_matrix(
 )
 }
 \arguments{
-\item{X}{Numeric vector or matrix of samples.}
+\item{X}{Numeric vector or matrix containing \eqn{n} observations. Rows are
+observations; a vector is treated as an \eqn{n\times 1} matrix.}
 
-\item{score_function}{Function returning the target score for each row of
-\code{X}.}
+\item{score_function}{Function that accepts the checked \eqn{n\times d}
+sample matrix and returns an \eqn{n\times d} score matrix.}
 
-\item{scaling}{Positive kernel scale. \code{NULL} uses the square of the exact
-all-pair median distance.}
+\item{scaling}{Positive squared scale passed to the kernel. For the built-in
+RBF and IMQ kernels this is, respectively, \eqn{h^2} and \eqn{c^2}.
+\code{NULL} uses the squared median pairwise distance.}
 
 \item{kernel}{Kernel choice: \code{"gaussian_rbf"}, \code{"imq"}, or a \code{SteinKernel}
-object, including objects created by \code{\link[=custom_stein_kernel]{custom_stein_kernel()}}.}
+object.}
 
-\item{imq_beta}{IMQ kernel exponent.}
+\item{imq_beta}{Finite exponent \eqn{\beta<0} of the built-in IMQ kernel.}
 }
 \value{
-Numeric \verb{n x n} matrix with entry \code{k0(x_i, x_j)}, including the diagonal.
-Pass this matrix to \code{\link[=ksd_v_statistic]{ksd_v_statistic()}} to get \verb{n V_n}, or to
-\code{\link[=ksd_v_bootstrap]{ksd_v_bootstrap()}} to generate wild-bootstrap replicates.
+Numeric \eqn{n\times n} matrix \eqn{K}, including its diagonal.
 }
 \description{
-Computes the pairwise Stein kernel values used by the V-statistic version of
-the KSD test.
+Build the Stein-kernel matrix for KSD-V
 }
 \details{
-Entry \verb{(i, j)} is \code{k0(x_i, x_j)}, including diagonal entries. Use
-\code{\link[=ksd_v_statistic]{ksd_v_statistic()}} to turn the matrix into the scaled statistic \verb{n V_n},
-\code{\link[=ksd_v_bootstrap]{ksd_v_bootstrap()}} to generate wild-bootstrap draws from the fixed matrix,
-or \code{\link[=ksd_v_test]{ksd_v_test()}} to run the full test. See \code{\link[=stein_kernel_matrix]{stein_kernel_matrix()}} for the
-formula used to assemble \code{k0}.
-
-This is the V-statistic analogue of \code{\link[=ksd_uq_matrix]{ksd_uq_matrix()}}. It is useful when the
-sample comes from an ordered or dependent process and the user wants to keep
-matrix construction separate from the wild-bootstrap step. The diagonal is
-retained because the V-statistic includes self-interactions.
-
-To move sideways from this function to \code{\link[=ksd_uq_matrix]{ksd_uq_matrix()}}, keep the same
-\code{X}, \code{score_function}, and kernel settings. The matrix entries are still
-\code{k0(x_i, x_j)}. The difference is the statistic and bootstrap that should be
-used afterward: U-statistic helpers drop the diagonal and use centered
-multinomial weights; V-statistic helpers keep the diagonal and use
-wild-bootstrap signs.
-The \code{q} in \code{ksd_vq_matrix()} follows the literature's Stein-kernel notation;
-it does not introduce a second user-supplied distribution. The target is the
-density whose score is returned by \code{score_function}, and the returned object
-is the package's \code{K0} matrix with entries \code{k0(x_i, x_j)}.
+For observations \eqn{X_1,\ldots,X_n}, this function returns
+\deqn{K_{ij}=k_{0,p}(X_i,X_j).}
+The diagonal is included and is retained by \code{\link[=ksd_v_statistic]{ksd_v_statistic()}} and
+\code{\link[=ksd_v_bootstrap]{ksd_v_bootstrap()}}.
 }
 \examples{
 X <- matrix(rnorm(5), ncol = 1)
