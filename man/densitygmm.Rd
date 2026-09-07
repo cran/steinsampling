@@ -4,7 +4,7 @@
 \alias{densitygmm}
 \title{Evaluate a Gaussian mixture density}
 \usage{
-densitygmm(model = NULL, X = NULL)
+densitygmm(model, X)
 }
 \arguments{
 \item{model}{Gaussian mixture model returned by \code{\link[=gmm]{gmm()}}.}
@@ -14,8 +14,7 @@ vector represents multiple observations. For a multivariate model, a
 length-\code{d} vector represents one observation. Matrix rows are observations.}
 }
 \value{
-A numeric vector containing one ordinary density value per interpreted
-observation in \code{X}.
+One density value per observation in \code{X}.
 }
 \description{
 Returns the density of a \code{\link[=gmm]{gmm()}} object at each supplied observation.

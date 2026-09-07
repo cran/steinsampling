@@ -12,15 +12,15 @@ ksd_u_bootstrap(
 )
 }
 \arguments{
-\item{K0}{Numeric \eqn{n\times n} Stein-kernel matrix, such as the output of
-\code{\link[=ksd_uq_matrix]{ksd_uq_matrix()}}.}
+\item{K0}{Finite numeric \eqn{n\times n} Stein-kernel matrix with
+\eqn{n\ge 2}, such as the output of \code{\link[=ksd_uq_matrix]{ksd_uq_matrix()}}.}
 
-\item{nboot}{Positive number of bootstrap draws. Ignored when \code{W_mat} is
-supplied.}
+\item{nboot}{Positive integer number of bootstrap draws. Ignored when
+\code{W_mat} is supplied.}
 
-\item{W_mat}{Optional numeric \eqn{n\times B} matrix of centered weights.
-Row \eqn{i} corresponds to observation \eqn{i}; column \eqn{b} specifies
-bootstrap draw \eqn{b}. If \code{NULL}, the weights above are generated.}
+\item{W_mat}{Optional finite numeric \eqn{n\times B} multiplier matrix. If
+\code{NULL}, centered multinomial weights are generated. Supplied columns need
+not be centered.}
 
 \item{boot_method}{Bootstrap method. Currently only
 \code{"multinomial_centered"} is supported.}

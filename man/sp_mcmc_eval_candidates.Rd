@@ -2,7 +2,7 @@
 % Please edit documentation in R/stein_point_mcmc.R
 \name{sp_mcmc_eval_candidates}
 \alias{sp_mcmc_eval_candidates}
-\title{Score SP-MCMC candidate points}
+\title{Score candidate points with the greedy Stein objective}
 \usage{
 sp_mcmc_eval_candidates(
   kernel,
@@ -14,7 +14,8 @@ sp_mcmc_eval_candidates(
 )
 }
 \arguments{
-\item{kernel}{Stein kernel object or compatible custom kernel.}
+\item{kernel}{A \code{SteinKernel} object. A Gaussian RBF kernel must have a
+fixed positive bandwidth.}
 
 \item{score_function}{Function returning scores for candidate rows.}
 
@@ -29,30 +30,23 @@ sp_mcmc_eval_candidates(
 \value{
 A list with:
 \itemize{
-\item \code{objective_values}: doubled greedy objective value for each candidate row.
-The row with the smallest value is the point \code{\link[=sp_mcmc]{sp_mcmc()}} appends.
-\item \code{scores}: score matrix for the candidate rows, either reused from \code{cand_D}
-or computed from \code{score_function}; it is returned so the selected row can
-be appended without another score call.
-\item \code{score_evaluations}: number of candidate score evaluations performed inside
-this helper.
+\item \code{objective_values}: one comparison value per candidate row.
+\item \code{scores}: candidate scores, reused from \code{cand_D} when supplied.
+\item \code{k0_diag}: Stein-kernel diagonal for the candidate rows.
+\item \code{score_evaluations}: rows scored here; zero when \code{cand_D} is supplied.
 }
 }
 \description{
-Scores candidate rows from a short MCMC path using the same greedy Stein
-Points objective used inside \code{\link[=sp_mcmc]{sp_mcmc()}}.
+Scores candidate rows using the greedy objective minimized by \code{\link[=sp_mcmc]{sp_mcmc()}}.
 }
 \details{
-For each candidate \code{x}, the objective in the paper is
-\deqn{\frac{1}{2} k0(x, x) + \sum_i k0(x_i, x)}
-in the notation of the Stein Points paper. This helper returns the doubled
-equivalent
+For each candidate \code{x}, the value used for comparison is
 \deqn{k0(x, x) + 2 \sum_i k0(x_i, x),}
 where the sum runs over rows in \code{X_curr}. \code{objective_values} contains one
-objective value per candidate row, in the same order as \code{cand_X}. If the MCMC
+comparison value per candidate row, in the same order as \code{cand_X}. If the MCMC
 transition already returned candidate scores, pass them as \code{cand_D};
-otherwise this helper evaluates \code{score_function} on the candidate rows and
-records how many score evaluations were needed.
+otherwise this function evaluates \code{score_function} on the candidate rows and
+records how many rows were scored.
 }
 \examples{
 score <- function(X) -as.matrix(X)

@@ -18,5 +18,5 @@
 Print a Stein kernel
 }
 \examples{
-stein_kernel("imq", c = 1, beta = -0.5)
+stein_kernel("imq", c = 1.5, beta = -0.75)
 }

@@ -13,15 +13,15 @@ ksd_v_bootstrap(
 )
 }
 \arguments{
-\item{K0}{Numeric \eqn{n\times n} Stein-kernel matrix, such as the output of
-\code{\link[=ksd_vq_matrix]{ksd_vq_matrix()}}.}
+\item{K0}{Finite numeric \eqn{n\times n} Stein-kernel matrix with
+\eqn{n\ge 2}, such as the output of \code{\link[=ksd_vq_matrix]{ksd_vq_matrix()}}.}
 
-\item{nboot}{Positive number of bootstrap draws. Ignored when \code{W_mat} is
-supplied.}
+\item{nboot}{Positive integer number of bootstrap draws. Ignored when
+\code{W_mat} is supplied.}
 
-\item{W_mat}{Optional numeric \eqn{n\times B} sign matrix. Row \eqn{i}
-corresponds to observation \eqn{i}; column \eqn{b} specifies bootstrap
-draw \eqn{b}. If \code{NULL}, signs are generated from \code{boot_method}.}
+\item{W_mat}{Optional finite numeric \eqn{n\times B} multiplier matrix. If
+\code{NULL}, signs are generated from \code{boot_method}. Supplied entries need not
+be \eqn{\pm 1}.}
 
 \item{boot_method}{Sign process used when \code{W_mat = NULL}: \code{"rademacher"} or
 \code{"markov"}.}

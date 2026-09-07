@@ -2,7 +2,7 @@
 % Please edit documentation in R/stein_points.R
 \name{stein_points}
 \alias{stein_points}
-\title{Select points by Stein discrepancy minimization}
+\title{Construct points by Stein discrepancy minimization}
 \usage{
 stein_points(
   score_function,
@@ -22,18 +22,22 @@ stein_points(
 \item{score_function}{Function taking an \verb{n x d} matrix and returning the
 corresponding \verb{n x d} matrix of target scores.}
 
-\item{kernel}{Kernel used to construct \eqn{k_{0,p}}. It may be a built-in
-kernel object, a compatible custom object, a function
-\code{kernel(X, S_X, Y, S_Y)}, or a list with \code{k0_matrix}. A Gaussian RBF
-kernel must use a fixed positive bandwidth.}
+\item{kernel}{A \code{SteinKernel} object used to construct \eqn{k_{0,p}}. A
+Gaussian RBF kernel must use a fixed positive bandwidth.}
 
 \item{n_points}{Positive number of points to select.}
 
 \item{d}{Positive state dimension.}
 
 \item{optimizer}{Function taking \verb{(objective, X_curr, t)} and returning
-\code{x_min}, its score \code{d_min}, the minimized objective \code{f_min}, and the
-evaluation count \code{n_eval}.}
+\code{x_min} and its score \code{d_min} as length-\code{d} vectors, \code{f_min} as the value
+of the supplied objective at \code{x_min}, and a nonnegative integer \code{n_eval}.
+The returned vectors and objective value must be finite. During
+initialization from \code{log_p}, only \code{x_min} and \code{n_eval} are used; the
+selected point is scored separately. With truncation,
+the optimizer must select a feasible candidate; the selected point is
+checked before it is appended. An infeasible result raises an error. The
+selected point's objective is recomputed before updating the running KSD.}
 
 \item{method}{Point-selection rule: \code{"greedy"} or \code{"herding"}.}
 
@@ -42,9 +46,11 @@ evaluation count \code{n_eval}.}
 \item{x_init}{Optional finite numeric vector of length \code{d} giving the first
 point. If supplied, \code{log_p} is not used.}
 
-\item{c2}{Positive truncation constant when \code{truncation != "none"}.}
+\item{c2}{Finite positive denominator in the truncation radius. Ignored when
+\code{truncation = "none"}.}
 
-\item{truncation}{Candidate-filtering rule. Use \code{"none"} for no filtering.}
+\item{truncation}{Candidate filter defined above: \code{"none"}, \code{"upper"},
+\code{"lower"}, or \code{"linear"}.}
 
 \item{seed}{Optional local RNG seed.}
 }
@@ -53,7 +59,10 @@ An object of class \code{"stein_points"} with:
 \itemize{
 \item \code{X} and \code{D}: \verb{n_points x d} matrices of selected points and their scores.
 \item \code{ksd}: running discrepancy defined above.
-\item \code{n_eval} and \code{cum_n_eval}: per-step and cumulative evaluation counts.
+\item \code{n_eval}: evaluation count reported by \code{optimizer} at each step; see
+\code{\link[=fmin_grid]{fmin_grid()}}, \code{\link[=fmin_mc]{fmin_mc()}}, and \code{\link[=fmin_nm]{fmin_nm()}} for what each one counts. The
+first entry is 1 when \code{x_init} is supplied; otherwise it adds 1 for scoring
+the selected first point. \code{cum_n_eval = cumsum(n_eval)}.
 \item \code{method}, \code{kernel}, \code{truncation}, and \code{c2}: settings used by the run.
 \item \code{call}: matched function call.
 }
@@ -65,34 +74,40 @@ objective.
 }
 \details{
 Let \eqn{k_{0,p}} be the Stein kernel formed from \code{kernel} and
-\eqn{s_p(x)=\nabla_x\log p(x)}. Given selected points
-\eqn{x_1,\ldots,x_{j-1}}, the greedy rule chooses
-\deqn{x_j \in \mathop{\mathrm{argmin}}_{x\in\mathbb{R}^d} Q_j(x),}
-where
-\deqn{Q_j(x)=\frac{1}{2}k_{0,p}(x,x)
-      +\sum_{i=1}^{j-1}k_{0,p}(x_i,x).}
-With \code{method = "herding"}, the self-interaction is omitted and the
-objective is
-\deqn{Q_j^{\mathrm{herd}}(x)
-      =\sum_{i=1}^{j-1}k_{0,p}(x_i,x).}
+\eqn{s_p(x)=\nabla_x\log p(x)}. The first point is \code{x_init}; if \code{x_init} is
+\code{NULL}, \code{optimizer} instead maximizes \code{log_p}.
 
-\code{optimizer} performs the numerical search for each \eqn{x_j}. The supplied
-constructors \code{\link[=fmin_grid]{fmin_grid()}}, \code{\link[=fmin_mc]{fmin_mc()}}, and \code{\link[=fmin_nm]{fmin_nm()}} use grid, Monte
-Carlo, and Nelder--Mead search, respectively. The first point is \code{x_init};
-if \code{x_init} is \code{NULL}, \code{optimizer} instead maximizes \code{log_p}.
+Given selected points
+\eqn{x_1,\ldots,x_{j-1}}, the greedy optimizer minimizes
+\deqn{G_j(x)=k_{0,p}(x,x)
+      +2\sum_{i=1}^{j-1}k_{0,p}(x_i,x).}
+This is the amount added to the kernel sum used by the running KSD. With
+\code{method = "herding"}, the optimizer instead minimizes
+\deqn{H_j(x)=\sum_{i=1}^{j-1}k_{0,p}(x_i,x).}
+
+The supplied \code{\link[=fmin_grid]{fmin_grid()}}, \code{\link[=fmin_mc]{fmin_mc()}}, and \code{\link[=fmin_nm]{fmin_nm()}} constructors use
+grid, Monte Carlo, and Nelder-Mead search, respectively.
 
 The returned discrepancy after step \eqn{j} is
 \deqn{\mathrm{KSD}_j
 =\left\{\frac{1}{j^2}\sum_{a=1}^j\sum_{b=1}^j
 k_{0,p}(x_a,x_b)\right\}^{1/2}.}
-When \code{truncation != "none"}, the truncation rule filters candidates from
-steps 2 through \code{n_points}; it is not applied to the first point.
+Truncation keeps candidates satisfying
+\deqn{k_{0,p}(x,x) \le R_j^2.}
+Write \eqn{U^2=2\log\{\max(n_points,2)\}/c2} and
+\eqn{L_j^2=2\log(j)/c2}. \code{"upper"} uses \eqn{U^2}, \code{"lower"} uses
+\eqn{L_j^2}, and \code{"linear"} uses
+\eqn{L_j^2+(U^2-L_j^2)(j-1)/\max(n_points-1,1)}. Larger \code{c2} gives a smaller
+radius. Truncation starts at step 2; \code{"none"} disables it.
 }
 \examples{
 score <- function(X) -as.matrix(X)
 log_p <- function(X) -0.5 * rowSums(as.matrix(X)^2)
 kernel <- stein_kernel(type = "gaussian_rbf", h = 1)
 opt <- fmin_grid(lb = -1, ub = 1, n0 = 3, grow = FALSE)
-stein_points(score, kernel, n_points = 2, d = 1, optimizer = opt,
-             log_p = log_p)
+stein_points(score, kernel, n_points = 2, d = 1, optimizer = opt, 
+            log_p = log_p)
+}
+\references{
+Chen et al. (2018), Stein Points.
 }

@@ -38,6 +38,6 @@ With \eqn{r_M(x,y)=(x-y)^\top M(x-y)} and \code{M = precon} (identity when
       k_{\mathrm{IMQ}}(x,y)=\{c^2+r_M(x,y)\}^{\beta}.}
 }
 \examples{
-stein_kernel("gaussian_rbf", h = 1)
-stein_kernel("imq", c = 1, beta = -0.5)
+stein_kernel("gaussian_rbf", h = 2)
+stein_kernel("imq", c = 2, beta = -0.25)
 }

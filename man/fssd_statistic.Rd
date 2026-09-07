@@ -28,7 +28,7 @@ S_{\tilde n}
 Diagonal terms are excluded because population FSSD uses two independent
 draws. Although population \code{FSSD^2} is nonnegative, its unbiased
 off-diagonal estimator and the returned \eqn{S_{\tilde n}} can be negative
-in finite samples. This function does not compute a p-value.
+in finite samples.
 }
 \examples{
 tau <- matrix(c(1, 2, 3), ncol = 1)

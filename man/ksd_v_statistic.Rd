@@ -7,8 +7,8 @@
 ksd_v_statistic(K0)
 }
 \arguments{
-\item{K0}{Numeric \eqn{n\times n} Stein-kernel matrix, such as the output of
-\code{\link[=ksd_vq_matrix]{ksd_vq_matrix()}}.}
+\item{K0}{Finite numeric \eqn{n\times n} Stein-kernel matrix with
+\eqn{n\ge 2}, such as the output of \code{\link[=ksd_vq_matrix]{ksd_vq_matrix()}}.}
 }
 \value{
 One numeric value, \eqn{nV_n}.

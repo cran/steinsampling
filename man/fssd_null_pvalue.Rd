@@ -54,10 +54,8 @@ and returns
 \widehat p = \frac{1}{B}\sum_{b=1}^B
   \mathbf{1}\{S_{\tilde n}^{*(b)} \ge S_{\tilde n}\}.
 }
-The observed statistic and null draws are on the same
-\eqn{S_{\tilde n}=\tilde n\widehat{FSSD}^2} scale. The returned proportion
-does not use an add-one correction. The simulated law is the
-large-\eqn{\tilde n} limit of \eqn{S_{\tilde n}}, so the test holds its
+The returned proportion does not use an add-one correction. The simulated
+law is the large-\eqn{\tilde n} limit of \eqn{S_{\tilde n}}, so the test holds its
 nominal level only asymptotically.
 }
 \examples{

@@ -5,50 +5,37 @@
 #' kernels.
 #'
 #' @details
-#' Most functions use the target score
-#' \deqn{s_p(x) = \nabla_x \log p(x).}
-#' Because this is the log-density gradient, many tests and samplers do not
-#' require the normalizing constant of `p(x)`.
+#' Many targets are known only through an unnormalized density. Stein methods
+#' use the target score
+#' \deqn{s_p(x) = \nabla_x \log p(x)}
+#' to test whether data match the target and to transport, construct, or select
+#' representative points. The normalizing constant of `p(x)` is not required.
 #'
-#' The public API is layered. Complete methods occupy the top layer:
-#' [ksd_u_test()], [ksd_v_test()], [fssd_test()], [stein_thinning()],
-#' [stein_points()], [sp_mcmc()], and [svgd()]. The next layer exposes their
-#' reusable numerical pieces:
-#' [stein_kernel_matrix()], [ksd_uq_matrix()], [ksd_u_statistic()],
-#' [ksd_u_bootstrap()], [ksd_vq_matrix()], [ksd_v_statistic()],
-#' [ksd_v_bootstrap()], [compute_tau()], [fssd_statistic()], and
-#' [fssd_null_pvalue()]. They expose intermediate matrices and reusable
-#' calibration components.
 #' All public GOF statistic primitives return the scale used for null
 #' comparison: `n U_n`, `n V_n`, or `n FSSDhat^2`. Their bootstrap or simulated
-#' null draws use exactly the matching scale; unscaled U-statistics are private
-#' implementation details used only where an optimization objective requires
-#' them.
+#' null draws use exactly the matching scale. Unscaled U-statistics are internal
+#' intermediate values.
 #'
-#' For testing, [ksd_u_test()] implements the Liu, Lee, and Jordan
-#' independent-sample KSD test; its lower-level path is [ksd_uq_matrix()], the
-#' off-diagonal [ksd_u_statistic()], and centered-multinomial
-#' [ksd_u_bootstrap()]. [ksd_v_test()] keeps the same sample, score, and kernel
-#' layer but includes the diagonal and uses Rademacher or Markov signs through
-#' [ksd_vq_matrix()], [ksd_v_statistic()], and [ksd_v_bootstrap()].
-#' [fssd_test()] instead replaces the full pairwise matrix with [compute_tau()],
-#' finite Stein features evaluated at test locations.
+#' [ksd_u_test()] tests independent observations with an off-diagonal
+#' U-statistic. [ksd_v_test()] includes the diagonal and uses Rademacher or
+#' Markov signs. [fssd_test()] uses finite Stein features at test locations.
+#' For KSD-U, [ksd_uq_matrix()] builds the matrix, [ksd_u_statistic()] computes
+#' the statistic, and [ksd_u_bootstrap()] calibrates it. The KSD-V counterparts
+#' are [ksd_vq_matrix()], [ksd_v_statistic()], and [ksd_v_bootstrap()]. For
+#' FSSD, [compute_tau()] constructs the features, [fssd_statistic()] computes
+#' the statistic, and [fssd_null_pvalue()] simulates the null distribution.
 #'
-#' The sampling and compression methods reuse this kernel layer differently.
-#' [stein_thinning()] returns row indices that compress an existing sample,
-#' usually MCMC output. [stein_points()] constructs points by searching
-#' continuous candidates with [fmin_grid()], [fmin_mc()], or [fmin_nm()], while
-#' [sp_mcmc()] uses short MCMC paths as finite candidate sets. [svgd()] instead
-#' moves every particle by deterministic transport.
+#' [svgd()] transports an initial particle set. [stein_points()] constructs a
+#' point set by continuous search with [fmin_grid()], [fmin_mc()], or
+#' [fmin_nm()]. [sp_mcmc()] constructs points from states visited by short
+#' Markov chains. [stein_thinning()] selects rows from an existing sample.
 #'
-#' [stein_kernel()] and [custom_stein_kernel()] create kernel objects.
-#' [eval_kernel()], [grad_x_kernel()], [trace_mixed_kernel()],
-#' [cross_kernel()], and [grad_theta_v_kernel()] expose the pieces needed to
-#' assemble scalar Stein kernels `k0` and finite-location FSSD features. Most
-#' users need only the top-level algorithms, but custom kernels and diagnostics
-#' use the same public interface as built-ins.
+#' [stein_kernel()] creates Gaussian RBF and IMQ kernels;
+#' [custom_stein_kernel()] creates one from callbacks. [eval_kernel()],
+#' [grad_x_kernel()], [trace_mixed_kernel()], [cross_kernel()], and
+#' [grad_theta_v_kernel()] provide the corresponding kernel calculations.
 #'
-#' Finally, the example-model layer provides [gmm()] construction, [rgmm()]
-#' simulation, [densitygmm()] evaluation, and [get_score_evaluator()] to create
-#' the `function(X)` score callback expected by Stein routines.
+#' [gmm()] constructs a Gaussian mixture, [rgmm()] samples it,
+#' [densitygmm()] evaluates its density, and [get_score_evaluator()] returns its
+#' `function(X)` score callback.
 "_PACKAGE"

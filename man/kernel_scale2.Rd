@@ -22,3 +22,9 @@ The squared scale is \eqn{h^2} for Gaussian RBF and \eqn{c^2} for IMQ.
 Returns \code{NULL} for a kernel that exposes no scale, and \code{NA_real_} for one
 whose scale exists but is not set.
 }
+\examples{
+k <- stein_kernel("gaussian_rbf", h = 2)
+kernel_scale2(k)                             # h^2
+kernel_scale2(kernel_scale2(k, 9))
+kernel_scale2(stein_kernel("imq", c = 3))    # c^2
+}

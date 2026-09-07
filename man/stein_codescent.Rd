@@ -11,7 +11,7 @@ stein_codescent(X0, score_function, kernel, n_iter, optimizer, seed = NULL)
 
 \item{score_function}{Function returning scores for candidate rows.}
 
-\item{kernel}{Stein kernel object or compatible custom kernel.}
+\item{kernel}{A \code{SteinKernel} object.}
 
 \item{n_iter}{Number of coordinate-descent updates.}
 
@@ -24,51 +24,35 @@ An object of class \code{"stein_codescent"} with:
 \itemize{
 \item \code{X}: refined point matrix with the same dimensions as \code{X0}.
 \item \code{D}: target scores at the refined points.
-\item \code{objective}: numeric vector; \code{objective[it]} is the retained value of the
-coordinate objective at update \code{it}.
-\item \code{n_eval}: evaluation counts for each coordinate-descent update.
-\item \code{cum_n_eval}: cumulative evaluation counts.
+\item \code{objective}: retained value of the coordinate objective at each update.
+These are not KSDs and are not comparable across updates, because the
+objective omits the kernel sum over the fixed rows, which changes as the
+points move.
+\item \code{n_eval}: optimizer-reported evaluations per update; the first entry also
+counts the \code{nrow(X0)} initial scores.
+\item \code{cum_n_eval = cumsum(n_eval)}.
 \item \code{kernel}: kernel used to define the Stein objective.
 }
 
-The \code{objective} values are not KSDs. They differ from \eqn{n^2 KSD^2} by the
-kernel sum over the rows held fixed, which changes at every update, so they
-are comparable within an update but not across updates.
-
-There is no \code{ksd} trajectory, because each update replaces an existing row
-rather than extending a prefix. For the final KSD, build
-\code{K0 <- stein_kernel_matrix(kernel, out$X, out$D)} and evaluate
-\code{sqrt(sum(K0)) / nrow(out$X)}.
+No running \code{ksd} is returned. Compute the final KSD as
+\code{sqrt(sum(stein_kernel_matrix(kernel, out$X, out$D))) / nrow(out$X)}.
 }
 \description{
-Runs the budget-constrained refinement described with Stein Points: keep the
-number of points fixed, then repeatedly optimize one existing point under the
-same KSD objective.
+Refines a completed Stein point set one row at a time while holding the
+others fixed. A replacement is accepted only if the point-set KSD does not
+increase.
 }
 \details{
-At iteration \code{it}, row \code{((it - 1) \%\% nrow(X0)) + 1} is optimized while the
-other rows are held fixed. For the row being replaced, the objective is the
-greedy Stein Points objective built from all remaining rows:
-\deqn{k0(x,x) + 2\sum_{i\ne r} k0(x_i,x),}
-where \code{r} is the row currently being replaced. This is the same doubled
-objective used by the greedy branch of \code{\link[=stein_points]{stein_points()}}, but the
-selected set size is fixed instead of growing by one point. The update is
-useful after a fixed budget of points has already been produced, because it
-can improve the locations without increasing the point count.
+At iteration \code{it}, row \eqn{r} \verb{= ((it - 1) \%\% nrow(X0)) + 1} is replaced by
+minimizing
+\deqn{k0(x,x) + 2\sum_{i\ne r} k0(x_i,x)}
+over \code{x}. This is the greedy objective of \code{\link[=stein_points]{stein_points()}}, except the set
+size stays fixed. With a single row the sum is empty and the objective is
+\eqn{k0(x,x)}.
 
-The paper defines each coordinate update by a global \code{argmin}, for which the
-current row is itself feasible and the KSD therefore cannot increase. The
-numerical grid, Monte Carlo, and Nelder--Mead searches are approximate and
-need not return a better point. After each search, this implementation
-evaluates the old and proposed rows under the same coordinate objective and
-keeps the proposal only when its value is no larger. This incumbent fallback
-restores the non-increase property without adding a score evaluation because
-both scores are already cached. When \code{X0} contains a single row the
-interaction sum is empty and the objective reduces to \eqn{k0(x,x)},
-matching the special branch in the authors' MATLAB code.
-
-The optimizer interface is the one used by \code{\link[=stein_points]{stein_points()}}, so a grid,
-Monte Carlo, or Nelder-Mead search serves both construction and refinement.
+Because the optimizers are approximate, each proposal is compared with the
+current row under the same objective before it is accepted. The optimizer
+interface is the same as in \code{\link[=stein_points]{stein_points()}}.
 }
 \examples{
 score <- function(X) -as.matrix(X)

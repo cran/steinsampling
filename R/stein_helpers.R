@@ -1,6 +1,6 @@
-# Shared validation, RNG, scale, and block-evaluation helpers.
+# Validation, RNG, scale, and block helpers.
 
-# ---- Public: median-heuristic scale --------------------------------------
+# Public median-heuristic scale
 
 #' Median-heuristic squared scale
 #'
@@ -37,7 +37,7 @@ find_median_distance <- function(Z) {
   }
   if (med == 0) {
     warning(
-      "Median pairwise squared distance is zero (possible non-mixing/repeated states); using floor value 1e-5.",
+      "Median pairwise distance is zero; using 1e-5 instead. Check `Z` for repeated rows.",
       call. = FALSE
     )
     med <- 1e-5
@@ -47,7 +47,7 @@ find_median_distance <- function(Z) {
 }
 
 
-# ---- Internal: validation, RNG, and evaluation-mode helpers --------------
+# Internal validation, RNG, and evaluation-mode helpers
 
 .as_rows <- function(x, arg_name = "X", min_rows = 1L) {
   if (is.null(dim(x))) {
@@ -109,25 +109,29 @@ find_median_distance <- function(Z) {
 
 validate_integer <- function(x, arg_name, min_value = 1L) {
   if (!is.numeric(x) || length(x) != 1 || !is.finite(x) ||
-    abs(x - round(x)) > sqrt(.Machine$double.eps) || round(x) < min_value) {
+    abs(x - round(x)) > sqrt(.Machine$double.eps) || round(x) < min_value ||
+    round(x) > .Machine$integer.max) {
     stop(sprintf(
-      "`%s` must be a %s integer", arg_name,
-      if (min_value > 0L) "positive" else "nonnegative"
+      "`%s` must be a %s integer no larger than %d", arg_name,
+      if (min_value > 0L) "positive" else "nonnegative", .Machine$integer.max
     ), call. = FALSE)
   }
   as.integer(round(x))
 }
 
-# Evaluate an expression with a temporary seed and restore the caller's RNG
-# state. Stochastic FSSD, Stein Points, and SP-MCMC wrappers call this helper.
+validate_flag <- function(x, arg_name) {
+  if (!is.logical(x) || length(x) != 1L || is.na(x)) {
+    stop(sprintf("`%s` must be TRUE or FALSE", arg_name), call. = FALSE)
+  }
+  x
+}
+
+# Run with a temporary seed, then restore the caller's RNG state.
 with_local_seed <- function(seed, expr) {
   if (is.null(seed)) {
     return(force(expr))
   }
   seed <- as.integer(seed)
-  if (requireNamespace("withr", quietly = TRUE)) {
-    return(withr::with_seed(seed, expr))
-  }
   had_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
   if (had_seed) {
     old_seed <- get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
@@ -146,36 +150,28 @@ with_local_seed <- function(seed, expr) {
   force(expr)
 }
 
-# Largest off-diagonal kernel value in one block. A diagonal block drops its
-# own diagonal. NULL or an empty block gives -Inf.
-.max_offdiag_from_kernel_matrix <- function(k_mat, diagonal_block = TRUE) {
-  if (is.null(k_mat)) {
-    return(-Inf)
+# Use the diagonal magnitude as the relative scale for off-diagonal interactions.
+.warn_if_degenerate_stein_matrix <- function(offdiag_max, diag_max,
+                                             tol = 1e-12) {
+  degenerate <- offdiag_max == 0 ||
+    (diag_max > 0 && offdiag_max <= tol * diag_max)
+  if (isTRUE(degenerate)) {
+    warning("The Stein kernel matrix is nearly diagonal; the KSD bootstrap may be degenerate.",
+            call. = FALSE)
   }
-  vals <- if (diagonal_block) k_mat[lower.tri(k_mat, diag = FALSE)] else k_mat
-  if (length(vals) == 0L) {
-    return(-Inf)
-  }
-  max(vals, na.rm = TRUE)
+  invisible(NULL)
 }
 
 .resolve_block_settings <- function(n, block_size, block_threshold) {
-  if (!is.numeric(block_threshold) || length(block_threshold) != 1 ||
-    !is.finite(block_threshold) || block_threshold < 1) {
-    stop("block_threshold must be a positive scalar", call. = FALSE)
-  }
+  n <- validate_integer(n, "n")
+  block_threshold <- validate_integer(block_threshold, "block_threshold")
 
-  n <- as.integer(n)
-  block_threshold <- as.integer(block_threshold)
   auto_block <- n > block_threshold
-  if (is.null(block_size)) {
-    block_size <- if (auto_block) min(1024L, n) else n
+  block_size <- if (is.null(block_size)) {
+    if (auto_block) min(1024L, n) else n
+  } else {
+    min(validate_integer(block_size, "block_size"), n)
   }
-  if (!is.numeric(block_size) || length(block_size) != 1 ||
-    !is.finite(block_size) || block_size < 1) {
-    stop("block_size must be NULL or a positive scalar", call. = FALSE)
-  }
-  block_size <- min(as.integer(block_size), n)
 
   list(
     use_block_mode = auto_block || block_size < n,
@@ -199,9 +195,9 @@ with_local_seed <- function(seed, expr) {
     if (inherits(kernel_obj, "SteinKernel_gaussian_rbf") &&
         !is.finite(kernel_scale)) {
       if (is.null(scaling)) {
-        scaling <- resolve_gaussian_rbf_h2(kernel_obj, x_mat)
+        scaling <- resolve_gaussian_rbf_scale2(kernel_obj, x_mat)
       }
-      kernel_obj$h2 <- validate_kernel_squared_scale(scaling)
+      kernel_obj <- kernel_scale2(kernel_obj, scaling)
     } else {
       scaling <- kernel_scale
     }
@@ -232,4 +228,42 @@ with_local_seed <- function(seed, expr) {
     stop("K0 must be a finite square numeric matrix with at least two rows", call. = FALSE)
   }
   K0
+}
+
+# Shared helpers supporting S3 methods for sampling results.
+.point_set_label <- function(method) {
+  switch(method,
+    greedy = "Stein Points (greedy)", herding = "Stein Points (herding)",
+    codescent = "Stein codescent", svgd = "SVGD", sp_mcmc = "SP-MCMC", method)
+}
+
+.point_set_summary <- function(object, evaluation_label) {
+  X <- object$X
+  structure(
+    list(
+      method = object$method,
+      kernel = kernel_type_name(object$kernel),
+      n = nrow(X),
+      d = ncol(X),
+      evaluation_label = evaluation_label,
+      n_eval_total = if (length(object$cum_n_eval)) {
+        object$cum_n_eval[length(object$cum_n_eval)]
+      } else {
+        NA_real_
+      },
+      call = object$call
+    ),
+    class = "summary.stein_points"
+  )
+}
+
+.print_point_set_body <- function(x) {
+  if (!is.null(x$ksd_last)) {
+    cat(sprintf("  KSD: %.4g\n", x$ksd_last))
+  }
+  cat(sprintf("  %s: %g\n", x$evaluation_label, x$n_eval_total))
+  if (!is.null(x$truncation) && !identical(x$truncation, "none")) {
+    cat(sprintf("  truncation: %s  c2=%g\n", x$truncation, x$c2))
+  }
+  invisible(x)
 }

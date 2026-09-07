@@ -4,7 +4,7 @@
 \alias{rgmm}
 \title{Sample from a Gaussian mixture model}
 \usage{
-rgmm(model = NULL, n = 100)
+rgmm(model, n = 100)
 }
 \arguments{
 \item{model}{Gaussian mixture model returned by \code{\link[=gmm]{gmm()}}.}

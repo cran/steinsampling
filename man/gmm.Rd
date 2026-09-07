@@ -45,9 +45,10 @@ The model density is
 where \eqn{w_k}, \eqn{\mu_k}, and \eqn{\Sigma_k} are the weight, mean, and
 covariance of component \eqn{k}. Weights are normalized to sum to one.
 
-By default, \code{nComp = 5} and \code{d = 1}. If \code{mu} is omitted, centered random
-means are generated. If \code{sigma} is omitted, every component uses the
-identity covariance matrix.
+With no arguments, \code{gmm()} creates a one-dimensional five-component mixture.
+If \code{mu} is omitted, its entries are drawn independently from \code{Uniform(0, 10)}
+and centered across components within each coordinate. If \code{sigma} is omitted,
+every component uses the identity covariance matrix.
 }
 \examples{
 model <- gmm()

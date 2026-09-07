@@ -27,17 +27,19 @@ fssd_opt_test(
 \item{score_function}{Function returning the target score for each row of
 \code{X}; the output should have shape \verb{n x d}.}
 
-\item{J}{Number of test locations in \code{L}.}
+\item{J}{Number of test locations.}
 
 \item{n_simulations}{Number of null draws.}
 
 \item{kernel}{\code{"gaussian_rbf"}, \code{"imq"}, or a \code{SteinKernel} object.}
 
-\item{scaling}{Starting positive squared kernel scale. \code{NULL} initializes it
-from a median-based training grid. Supplying a value skips that grid but
-does not hold \eqn{h^2} fixed when the kernel provides \code{set_scale_fn}. A
-scale stored in a \code{SteinKernel} object is the starting value and takes
-precedence.}
+\item{scaling}{Starting positive squared kernel scale (\eqn{h^2} for
+Gaussian RBF, \eqn{c^2} for IMQ). \code{NULL} uses a five-value grid around the
+training-row median squared scale when the kernel needs one. Supplying a
+value skips that grid but does not fix an optimizable squared scale.
+A finite squared scale in a
+supplied \code{SteinKernel} is the starting value and takes precedence;
+\code{scaling} is ignored when the kernel exposes no squared scale.}
 
 \item{train_ratio}{Fraction of rows requested for FSSD-opt training.}
 
@@ -45,10 +47,11 @@ precedence.}
 
 \item{maxit}{Maximum L-BFGS-B iterations for FSSD-opt.}
 
-\item{locs_bounds_frac}{Location-bound width in fitted standard deviations.}
+\item{locs_bounds_frac}{Number of training-set standard deviations added
+below each coordinate minimum and above each coordinate maximum.}
 
-\item{scale_lower, scale_upper}{Bounds for the optimized squared kernel
-scale.}
+\item{scale_lower, scale_upper}{Bounds applied to the squared kernel scale
+when that scale is optimized.}
 
 \item{seed}{Optional RNG seed for splitting rows, drawing starting locations,
 and simulating held-out null draws.}
@@ -59,20 +62,18 @@ and simulating held-out null draws.}
 An object of class \code{htest}. \code{statistic} is
 \eqn{S_{n_{test}}=n_{test}\widehat{FSSD}^2}, computed on the held-out rows;
 \code{p.value} is obtained from the held-out plug-in null calibration. \code{info}
-contains \code{L}, the realized split sizes, optimized scale, objective value,
-objective-function count, and optimizer convergence code.
+contains \code{V}, the realized split sizes, optimized squared scale, objective
+value, objective-function count, and optimizer convergence code.
 }
 \description{
-Selects the test locations \eqn{L = \{v_1,\ldots,v_J\}} on training rows.
-For the built-in Gaussian RBF and IMQ kernels, and for custom kernels created
-with \code{set_scale_fn}, it also selects the squared kernel scale \eqn{h^2}. The
-FSSD statistic and null calibration use disjoint held-out rows.
+Selects the test locations \eqn{L = \{v_1,\ldots,v_J\}} and, when the
+kernel exposes one, the squared kernel scale \eqn{\rho} on training rows.
+The FSSD statistic and null calibration use disjoint held-out rows.
 }
 \details{
-The function first splits \code{X} into training and held-out rows. On the training
-rows it selects \code{L} and, when applicable, \eqn{h^2} by maximizing
+The training criterion to maximize is
 \deqn{
-C(L,h^2) =
+C(L,\rho) =
 \frac{\widehat{FSSD}_{train}^2}
      {\sqrt{\widehat{\mathrm{Var}}_{H_1}} + \gamma},
 }
@@ -89,16 +90,12 @@ Here \eqn{\bar\tau} is the mean feature vector on the training rows, and
 \eqn{\gamma>0} keeps the denominator away from zero.
 
 Starting locations are drawn from a Gaussian fitted to the training rows.
-When \eqn{h^2} is selected and \code{scaling = NULL}, it is initialized by a
-five-value grid around the training-row median scale. A supplied scale skips
-that grid and is used as the starting value. Bounded L-BFGS-B then refines
-\code{L} and \eqn{h^2} jointly.
+Bounded L-BFGS-B refines \code{L} and any optimizable squared scale jointly;
+the \code{scaling} argument specifies how its starting value is chosen.
 
-After optimization, \code{L} and the scale are fixed. \code{\link[=compute_tau]{compute_tau()}},
-\code{\link[=fssd_statistic]{fssd_statistic()}}, and \code{\link[=fssd_null_pvalue]{fssd_null_pvalue()}} are evaluated only on the
-held-out rows. Conditional on the training rows, the selected \code{L} and scale
-are fixed independently of the test rows, so the fixed-location null
-calibration applies.
+The selected locations and kernel are fixed for the held-out test.
+Conditional on the training rows, these choices are independent of the test
+rows, as required by the null calibration in \code{\link[=fssd_null_pvalue]{fssd_null_pvalue()}}.
 }
 \examples{
 X <- matrix(rnorm(40), ncol = 1)

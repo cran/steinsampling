@@ -29,3 +29,11 @@ Score-derivative coupling of a base kernel
 Derived from \code{grad_x} using \eqn{\nabla_y k(x,y)=\nabla_x k(y,x)}, which
 holds for every symmetric base kernel, so no kernel supplies this term.
 }
+\examples{
+k <- stein_kernel("gaussian_rbf", h = 1)
+X <- matrix(c(-1, 0, 1), ncol = 1)
+S <- -X
+all.equal(stein_kernel_matrix(k, X, S),
+          tcrossprod(S) * eval_kernel(k, X) + cross_kernel(k, X, S) +
+            trace_mixed_kernel(k, X))
+}

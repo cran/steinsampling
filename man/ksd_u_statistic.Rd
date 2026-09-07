@@ -7,8 +7,8 @@
 ksd_u_statistic(K0)
 }
 \arguments{
-\item{K0}{Numeric \eqn{n\times n} Stein-kernel matrix, such as the output of
-\code{\link[=ksd_uq_matrix]{ksd_uq_matrix()}}. It must contain at least two rows and columns.}
+\item{K0}{Finite numeric \eqn{n\times n} Stein-kernel matrix with
+\eqn{n\ge 2}, such as the output of \code{\link[=ksd_uq_matrix]{ksd_uq_matrix()}}.}
 }
 \value{
 One numeric value, \eqn{T_n=nU_n}.

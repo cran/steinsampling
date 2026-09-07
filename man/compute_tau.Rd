@@ -13,7 +13,8 @@ compute_tau(X, scores, V, kernel_obj)
 
 \item{V}{Numeric \verb{J x d} matrix representing \code{L}, one test location per row.}
 
-\item{kernel_obj}{Stein kernel object.}
+\item{kernel_obj}{Stein kernel object. A Gaussian RBF kernel must have a
+fixed positive bandwidth.}
 }
 \value{
 Numeric \eqn{\tilde n \times dJ} matrix. Row \code{i} is \code{tau(x_i)}; columns are
@@ -39,12 +40,6 @@ With \code{d = ncol(X)} and \code{J = nrow(V)}, the returned row is
     \operatorname{vec}\{\xi_p(x_i,v_1),\ldots,\xi_p(x_i,v_J)\}
   \in \mathbb{R}^{dJ}.
 }
-The block of \code{d} columns associated with row \code{j} of \code{V} contains
-\eqn{\xi_p(x_i,v_j)/\sqrt{dJ}}.
-
-This function only constructs the features. For the fixed-location null
-calibration, \code{L} and the kernel, including its scale, must be fixed
-independently of the rows in \code{X}, or selected using separate training data.
 }
 \examples{
 X <- matrix(c(-1, 0, 1), ncol = 1)
@@ -52,4 +47,7 @@ scores <- -X
 V <- matrix(0, ncol = 1)
 kernel <- stein_kernel(type = "gaussian_rbf", h = 1)
 compute_tau(X, scores, V, kernel)
+}
+\seealso{
+\code{\link[=fssd_statistic]{fssd_statistic()}}, \code{\link[=fssd_null_pvalue]{fssd_null_pvalue()}}
 }

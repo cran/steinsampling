@@ -34,3 +34,8 @@ equal to \eqn{\nabla_{v_j}\mathcal L_j} and, when the kernel exposes a
 squared scale \eqn{\rho}, \code{grad_param} equal to
 \eqn{\partial\mathcal L_j/\partial\rho}.
 }
+\examples{
+X <- matrix(c(-1, 0, 1), ncol = 1)
+grad_theta_v_kernel(stein_kernel("gaussian_rbf", h = 1), X = X, vj = 1.5,
+                    grads_X = -X, g_block = matrix(1, nrow(X), ncol(X)))
+}

@@ -21,15 +21,19 @@ fssd_rand_test(
 \item{score_function}{Function returning the target score for each row of
 \code{X}; the output should have shape \verb{n x d}.}
 
-\item{J}{Number of test locations in \code{L}.}
+\item{J}{Number of test locations.}
 
 \item{n_simulations}{Number of null draws.}
 
 \item{kernel}{\code{"gaussian_rbf"}, \code{"imq"}, or a \code{SteinKernel} object.}
 
-\item{scaling}{Final positive squared kernel scale. \code{NULL} computes the
-squared exact all-pair median distance from the same \code{X}. A scale stored in
-a supplied \code{SteinKernel} object takes precedence.}
+\item{scaling}{Final positive squared kernel scale (\eqn{h^2} for Gaussian
+RBF, \eqn{c^2} for IMQ). \code{NULL} uses the square of the median of all pairwise
+distances in \code{X} when the kernel needs a squared scale. A Gaussian RBF
+kernel carrying \code{precon} uses its preconditioned distance; otherwise the
+distance is Euclidean. A finite squared scale in a supplied \code{SteinKernel}
+takes precedence; \code{scaling} is ignored when the kernel exposes no squared
+scale.}
 
 \item{seed}{Optional RNG seed for drawing \code{V} and simulating null draws.}
 
@@ -52,13 +56,9 @@ covariance of \code{X}. The locations are drawn independently as
 v_j \sim N_d(\bar x,\widehat\Sigma_X),
 \qquad j=1,\ldots,J.
 }
-If \code{scaling = NULL}, the squared all-pair median distance is also computed
-from \code{X}. The same rows of \code{X} are then passed to \code{\link[=compute_tau]{compute_tau()}},
-\code{\link[=fssd_statistic]{fssd_statistic()}}, and \code{\link[=fssd_null_pvalue]{fssd_null_pvalue()}}. Thus \code{X} is used both to choose
-\code{L} and any default scale and to compute the statistic and null
-approximation. These choices are not independent of the tested rows, as
-required by the fixed-location null calibration, so the reported p-value is
-heuristic.
+The same rows are used for the statistic and null simulation. The locations,
+and any data-derived kernel scale, use the tested rows, so the reported
+p-value is heuristic. See \code{\link[=fssd_null_pvalue]{fssd_null_pvalue()}} for the independence condition.
 }
 \examples{
 X <- matrix(rnorm(8), ncol = 1)

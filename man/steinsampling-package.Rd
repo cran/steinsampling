@@ -11,57 +11,45 @@ tests, Stein thinning, Stein Points, SP-MCMC, SVGD, and reusable Stein
 kernels.
 }
 \details{
-Most functions use the target score
-\deqn{s_p(x) = \nabla_x \log p(x).}
-Because this is the log-density gradient, many tests and samplers do not
-require the normalizing constant of \code{p(x)}.
+Many targets are known only through an unnormalized density. Stein methods
+use the target score
+\deqn{s_p(x) = \nabla_x \log p(x)}
+to test whether data match the target and to transport, construct, or select
+representative points. The normalizing constant of \code{p(x)} is not required.
 
-The public API is layered. Complete methods occupy the top layer:
-\code{\link[=ksd_u_test]{ksd_u_test()}}, \code{\link[=ksd_v_test]{ksd_v_test()}}, \code{\link[=fssd_test]{fssd_test()}}, \code{\link[=stein_thinning]{stein_thinning()}},
-\code{\link[=stein_points]{stein_points()}}, \code{\link[=sp_mcmc]{sp_mcmc()}}, and \code{\link[=svgd]{svgd()}}. The next layer exposes their
-reusable numerical pieces:
-\code{\link[=stein_kernel_matrix]{stein_kernel_matrix()}}, \code{\link[=ksd_uq_matrix]{ksd_uq_matrix()}}, \code{\link[=ksd_u_statistic]{ksd_u_statistic()}},
-\code{\link[=ksd_u_bootstrap]{ksd_u_bootstrap()}}, \code{\link[=ksd_vq_matrix]{ksd_vq_matrix()}}, \code{\link[=ksd_v_statistic]{ksd_v_statistic()}},
-\code{\link[=ksd_v_bootstrap]{ksd_v_bootstrap()}}, \code{\link[=compute_tau]{compute_tau()}}, \code{\link[=fssd_statistic]{fssd_statistic()}}, and
-\code{\link[=fssd_null_pvalue]{fssd_null_pvalue()}}. They expose intermediate matrices and reusable
-calibration components.
 All public GOF statistic primitives return the scale used for null
 comparison: \verb{n U_n}, \verb{n V_n}, or \verb{n FSSDhat^2}. Their bootstrap or simulated
-null draws use exactly the matching scale; unscaled U-statistics are private
-implementation details used only where an optimization objective requires
-them.
+null draws use exactly the matching scale. Unscaled U-statistics are internal
+intermediate values.
 
-For testing, \code{\link[=ksd_u_test]{ksd_u_test()}} implements the Liu, Lee, and Jordan
-independent-sample KSD test; its lower-level path is \code{\link[=ksd_uq_matrix]{ksd_uq_matrix()}}, the
-off-diagonal \code{\link[=ksd_u_statistic]{ksd_u_statistic()}}, and centered-multinomial
-\code{\link[=ksd_u_bootstrap]{ksd_u_bootstrap()}}. \code{\link[=ksd_v_test]{ksd_v_test()}} keeps the same sample, score, and kernel
-layer but includes the diagonal and uses Rademacher or Markov signs through
-\code{\link[=ksd_vq_matrix]{ksd_vq_matrix()}}, \code{\link[=ksd_v_statistic]{ksd_v_statistic()}}, and \code{\link[=ksd_v_bootstrap]{ksd_v_bootstrap()}}.
-\code{\link[=fssd_test]{fssd_test()}} instead replaces the full pairwise matrix with \code{\link[=compute_tau]{compute_tau()}},
-finite Stein features evaluated at test locations.
+\code{\link[=ksd_u_test]{ksd_u_test()}} tests independent observations with an off-diagonal
+U-statistic. \code{\link[=ksd_v_test]{ksd_v_test()}} includes the diagonal and uses Rademacher or
+Markov signs. \code{\link[=fssd_test]{fssd_test()}} uses finite Stein features at test locations.
+For KSD-U, \code{\link[=ksd_uq_matrix]{ksd_uq_matrix()}} builds the matrix, \code{\link[=ksd_u_statistic]{ksd_u_statistic()}} computes
+the statistic, and \code{\link[=ksd_u_bootstrap]{ksd_u_bootstrap()}} calibrates it. The KSD-V counterparts
+are \code{\link[=ksd_vq_matrix]{ksd_vq_matrix()}}, \code{\link[=ksd_v_statistic]{ksd_v_statistic()}}, and \code{\link[=ksd_v_bootstrap]{ksd_v_bootstrap()}}. For
+FSSD, \code{\link[=compute_tau]{compute_tau()}} constructs the features, \code{\link[=fssd_statistic]{fssd_statistic()}} computes
+the statistic, and \code{\link[=fssd_null_pvalue]{fssd_null_pvalue()}} simulates the null distribution.
 
-The sampling and compression methods reuse this kernel layer differently.
-\code{\link[=stein_thinning]{stein_thinning()}} returns row indices that compress an existing sample,
-usually MCMC output. \code{\link[=stein_points]{stein_points()}} constructs points by searching
-continuous candidates with \code{\link[=fmin_grid]{fmin_grid()}}, \code{\link[=fmin_mc]{fmin_mc()}}, or \code{\link[=fmin_nm]{fmin_nm()}}, while
-\code{\link[=sp_mcmc]{sp_mcmc()}} uses short MCMC paths as finite candidate sets. \code{\link[=svgd]{svgd()}} instead
-moves every particle by deterministic transport.
+\code{\link[=svgd]{svgd()}} transports an initial particle set. \code{\link[=stein_points]{stein_points()}} constructs a
+point set by continuous search with \code{\link[=fmin_grid]{fmin_grid()}}, \code{\link[=fmin_mc]{fmin_mc()}}, or
+\code{\link[=fmin_nm]{fmin_nm()}}. \code{\link[=sp_mcmc]{sp_mcmc()}} constructs points from states visited by short
+Markov chains. \code{\link[=stein_thinning]{stein_thinning()}} selects rows from an existing sample.
 
-\code{\link[=stein_kernel]{stein_kernel()}} and \code{\link[=custom_stein_kernel]{custom_stein_kernel()}} create kernel objects.
-\code{\link[=eval_kernel]{eval_kernel()}}, \code{\link[=grad_x_kernel]{grad_x_kernel()}}, \code{\link[=trace_mixed_kernel]{trace_mixed_kernel()}},
-\code{\link[=cross_kernel]{cross_kernel()}}, and \code{\link[=grad_theta_v_kernel]{grad_theta_v_kernel()}} expose the pieces needed to
-assemble scalar Stein kernels \code{k0} and finite-location FSSD features. Most
-users need only the top-level algorithms, but custom kernels and diagnostics
-use the same public interface as built-ins.
+\code{\link[=stein_kernel]{stein_kernel()}} creates Gaussian RBF and IMQ kernels;
+\code{\link[=custom_stein_kernel]{custom_stein_kernel()}} creates one from callbacks. \code{\link[=eval_kernel]{eval_kernel()}},
+\code{\link[=grad_x_kernel]{grad_x_kernel()}}, \code{\link[=trace_mixed_kernel]{trace_mixed_kernel()}}, \code{\link[=cross_kernel]{cross_kernel()}}, and
+\code{\link[=grad_theta_v_kernel]{grad_theta_v_kernel()}} provide the corresponding kernel calculations.
 
-Finally, the example-model layer provides \code{\link[=gmm]{gmm()}} construction, \code{\link[=rgmm]{rgmm()}}
-simulation, \code{\link[=densitygmm]{densitygmm()}} evaluation, and \code{\link[=get_score_evaluator]{get_score_evaluator()}} to create
-the \verb{function(X)} score callback expected by Stein routines.
+\code{\link[=gmm]{gmm()}} constructs a Gaussian mixture, \code{\link[=rgmm]{rgmm()}} samples it,
+\code{\link[=densitygmm]{densitygmm()}} evaluates its density, and \code{\link[=get_score_evaluator]{get_score_evaluator()}} returns its
+\verb{function(X)} score callback.
 }
 \seealso{
 Useful links:
 \itemize{
   \item \url{https://github.com/junhao7622/steinsampling}
+  \item \url{https://arxiv.org/abs/2608.26450}
   \item Report bugs at \url{https://github.com/junhao7622/steinsampling/issues}
 }
 

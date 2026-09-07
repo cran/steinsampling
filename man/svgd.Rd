@@ -56,7 +56,7 @@ included.
 }
 }
 \description{
-Moves a fixed ensemble of particles toward a target distribution specified
+Transports an initial set of particles toward a target distribution specified
 by its score function. SVGD uses a base kernel and its first derivative; it
 does not construct the pairwise Stein kernel \eqn{k_{0,p}}.
 }
@@ -72,26 +72,30 @@ second repels nearby particles. Each update costs \eqn{O(m^2d)}.
 
 The update is
 \deqn{x_i^{(t+1)}=x_i^{(t)}+\epsilon\widetilde g_i^{(t)},}
-where \eqn{\epsilon} is \code{step_size}. By default, operations being entrywise,
+where \eqn{\epsilon} is \code{step_size}. By default, \eqn{\widetilde g} is the
+AdaGrad-style rescaling used by the original implementation of Liu and Wang
+(2016): entrywise,
 \deqn{H^{(1)}=g^{(1)}\odot g^{(1)},\qquad
-H^{(t)}=\alpha H^{(t-1)}+(1-\alpha)g^{(t)}\odot g^{(t)},}
-and
-\deqn{\widetilde g^{(t)}=
-\frac{g^{(t)}}{10^{-6}+\sqrt{H^{(t)}}}.}
-Supplying \code{adj_grad} replaces this adjustment but not the outer
-multiplication by \code{step_size}. Use
-\code{adj_grad = function(grad, ...) grad} for the unadjusted direction.
+H^{(t)}=\alpha H^{(t-1)}+(1-\alpha)g^{(t)}\odot g^{(t)},\qquad
+\widetilde g^{(t)}=\frac{g^{(t)}}{10^{-6}+\sqrt{H^{(t)}}}.}
+Supplying \code{adj_grad} replaces this rescaling but not the outer
+multiplication by \code{step_size}; \code{adj_grad = function(grad, ...) grad} gives
+\eqn{\widetilde g^{(t)}=g^{(t)}}, the plain update as stated by Liu and
+Wang (2016).
 
 For a Gaussian RBF kernel without a fixed bandwidth, let \eqn{\rho_t} be the
 median pairwise Euclidean distance between the current particles. The
 bandwidth is recomputed at every iteration as
 \deqn{h_t=\frac{\rho_t}{\sqrt{2\log m}}.}
-For one particle, \eqn{h_t=1}. A zero or non-finite median requires a fixed
-positive bandwidth. Fixed-bandwidth RBF and other kernels retain their
-supplied parameters.
+For one particle, \eqn{h_t=1}. If the median is zero or non-finite, \code{svgd()}
+stops; supply a fixed positive RBF bandwidth. Fixed-bandwidth RBF and other
+kernels retain their supplied parameters.
 }
 \examples{
 x0 <- matrix(seq(-2, 2, length.out = 5), ncol = 1)
 target_score <- function(x) -x
 svgd(x0, target_score, n_iter = 5, step_size = 0.05)
+}
+\references{
+Liu and Wang (2016), Stein Variational Gradient Descent.
 }

@@ -2,49 +2,43 @@
 
 #' Finite Set Stein Discrepancy goodness-of-fit test
 #'
-#' Runs one of two Finite Set Stein Discrepancy tests. With
-#' `variant = "opt"`, the test locations
-#' \eqn{L = \{v_1,\ldots,v_J\}} are selected on training rows. For the
-#' built-in Gaussian RBF and IMQ kernels, and for custom kernels created with
-#' `set_scale_fn`, the squared kernel scale \eqn{h^2} is selected as well. The
-#' statistic and null calibration use held-out rows. With `variant = "rand"`,
-#' all rows of `X` are used both to select `L` and any default scale and to
-#' compute the statistic and null approximation, so its p-value is heuristic.
-#'
-#' @details
-#' `variant = "opt"` calls [fssd_opt_test()], and `variant = "rand"` calls
-#' [fssd_rand_test()]. Both variants construct the FSSD features, compute
-#' \deqn{
-#' S_{\tilde n} = \tilde n\widehat{FSSD}^2,
-#' }
-#' and perform the plug-in null calibration implemented by
-#' [fssd_null_pvalue()]. Here \eqn{\tilde n = n_{test}} for FSSD-opt and
-#' \eqn{\tilde n = n} for FSSD-rand. The functions [compute_tau()],
-#' [fssd_statistic()], and [fssd_null_pvalue()] expose these calculations
-#' separately.
+#' Runs a Finite Set Stein Discrepancy goodness-of-fit test. With
+#' `variant = "opt"` (the default), the test locations and any squared kernel
+#' scale are selected on training rows, and the statistic and null calibration
+#' use held-out rows; see [fssd_opt_test()]. With `variant = "rand"`, all rows
+#' of `X` serve both purposes, so the p-value is heuristic; see
+#' [fssd_rand_test()].
 #'
 #' @param X Numeric vector or matrix of samples (`n x d`).
 #' @param score_function Function returning the target score for each row of
 #'   `X`; the output should have shape `n x d`.
 #' @param variant `"opt"` (default) or `"rand"`.
-#' @param J Number of test locations in `L`.
+#' @param J Number of test locations.
 #' @param n_simulations Number of null draws.
 #' @param kernel `"gaussian_rbf"`, `"imq"`, or a `SteinKernel` object.
-#' @param scaling Positive squared kernel scale. It is final for FSSD-rand and
-#'   an initial value for FSSD-opt. `NULL` uses a median-based value. A scale in
-#'   a supplied `SteinKernel` takes precedence.
+#' @param scaling Positive squared kernel scale: \eqn{h^2} for Gaussian RBF,
+#'   \eqn{c^2} for IMQ; a custom kernel may expose its own. It is final for
+#'   FSSD-rand and an initial value for FSSD-opt. `NULL` uses a median-based
+#'   value when the kernel needs a squared scale. A finite squared scale in a
+#'   supplied `SteinKernel` takes precedence; `scaling` is ignored when the
+#'   kernel exposes no squared scale.
 #' @param train_ratio Fraction of rows requested for FSSD-opt training.
 #' @param gamma Positive regularizer in the FSSD-opt criterion.
 #' @param maxit Maximum L-BFGS-B iterations for FSSD-opt.
-#' @param locs_bounds_frac Location-bound width in fitted standard deviations.
-#' @param scale_lower,scale_upper Bounds for the optimized squared kernel
-#'   scale.
+#' @param locs_bounds_frac Number of training-set standard deviations added
+#'   below each coordinate minimum and above each coordinate maximum.
+#' @param scale_lower,scale_upper Bounds applied to the squared kernel scale
+#'   when that scale is optimized.
 #' @param seed Optional RNG seed.
 #' @param imq_beta Finite IMQ exponent \eqn{\beta<0}.
 #'
 #' @return An `htest` object. `statistic` is
-#'   \eqn{S_{\tilde n}=\tilde n\widehat{FSSD}^2}; `p.value` is its simulated
-#'   right-tail p-value; `info` records `L` and variant-specific diagnostics.
+#'   \eqn{S_{\tilde n}=\tilde n\widehat{FSSD}^2}, where \eqn{\tilde n} is the
+#'   held-out size for FSSD-opt and \eqn{n} for FSSD-rand; `p.value` is its
+#'   simulated right-tail p-value; `info$V` is the test-location matrix, and
+#'   `info` contains variant-specific diagnostics.
+#' @references Jitkrittum et al. (2017), A Linear-Time Kernel Goodness-of-Fit
+#' Test.
 #' @examples
 #' X <- matrix(rnorm(40), ncol = 1)
 #' score_function <- function(x) -as.matrix(x)
@@ -70,8 +64,10 @@ fssd_test <- function(X, score_function,
                       seed = NULL,
                       imq_beta = -0.5) {
   variant <- match.arg(variant)
+  # The variants deparse their own `X`, which forwarding renames.
+  data_name <- deparse(substitute(X))
 
-  if (variant == "opt") {
+  res <- if (variant == "opt") {
     fssd_opt_test(
       X = X, score_function = score_function, J = J,
       n_simulations = n_simulations,
@@ -91,6 +87,8 @@ fssd_test <- function(X, score_function,
       imq_beta = imq_beta
     )
   }
+  res$data.name <- data_name
+  res
 }
 
 
@@ -107,17 +105,17 @@ fssd_test <- function(X, score_function,
 #' v_j \sim N_d(\bar x,\widehat\Sigma_X),
 #' \qquad j=1,\ldots,J.
 #' }
-#' If `scaling = NULL`, the squared all-pair median distance is also computed
-#' from `X`. The same rows of `X` are then passed to [compute_tau()],
-#' [fssd_statistic()], and [fssd_null_pvalue()]. Thus `X` is used both to choose
-#' `L` and any default scale and to compute the statistic and null
-#' approximation. These choices are not independent of the tested rows, as
-#' required by the fixed-location null calibration, so the reported p-value is
-#' heuristic.
+#' The same rows are used for the statistic and null simulation. The locations,
+#' and any data-derived kernel scale, use the tested rows, so the reported
+#' p-value is heuristic. See [fssd_null_pvalue()] for the independence condition.
 #' @inheritParams fssd_test
-#' @param scaling Final positive squared kernel scale. `NULL` computes the
-#'   squared exact all-pair median distance from the same `X`. A scale stored in
-#'   a supplied `SteinKernel` object takes precedence.
+#' @param scaling Final positive squared kernel scale (\eqn{h^2} for Gaussian
+#'   RBF, \eqn{c^2} for IMQ). `NULL` uses the square of the median of all pairwise
+#'   distances in `X` when the kernel needs a squared scale. A Gaussian RBF
+#'   kernel carrying `precon` uses its preconditioned distance; otherwise the
+#'   distance is Euclidean. A finite squared scale in a supplied `SteinKernel`
+#'   takes precedence; `scaling` is ignored when the kernel exposes no squared
+#'   scale.
 #' @param seed Optional RNG seed for drawing `V` and simulating null draws.
 #' @return
 #' An object of class `htest`. `statistic` is
@@ -137,23 +135,23 @@ fssd_rand_test <- function(X, score_function,
                            seed = NULL,
                            imq_beta = -0.5) {
   data_name <- deparse(substitute(X))
+  if (!is.function(score_function)) {
+    stop("`score_function` must be a function", call. = FALSE)
+  }
 
   run_rand <- function() {
-    prep <- .prepare_fssd_inputs(
-      X = X,
-      score_function = score_function,
-      min_rows = 2,
-      kernel = kernel,
-      scaling = scaling,
-      imq_beta = imq_beta
-    )
     J <- validate_integer(J, "J")
     n_simulations <- validate_integer(n_simulations, "n_simulations")
 
-    V <- .fssd_init_locations(prep$X, J)
+    x_mat <- .as_rows(X, "X", 2L)
+    scores <- .as_score_matrix(score_function(x_mat), x_mat)
+    prep <- .prepare_fssd_kernel(x_mat, kernel, scaling, imq_beta)
+
+    # Locations use the tested rows, so calibration is heuristic.
+    V <- .fssd_init_locations(x_mat, J)
     engine_res <- .compute_fssd_test(
-      X = prep$X,
-      scores = prep$scores,
+      X = x_mat,
+      scores = scores,
       V = V,
       kernel_obj = prep$kernel_obj,
       n_simulations = n_simulations
@@ -180,16 +178,14 @@ fssd_rand_test <- function(X, score_function,
 
 #' FSSD test with optimized test locations
 #'
-#' Selects the test locations \eqn{L = \{v_1,\ldots,v_J\}} on training rows.
-#' For the built-in Gaussian RBF and IMQ kernels, and for custom kernels created
-#' with `set_scale_fn`, it also selects the squared kernel scale \eqn{h^2}. The
-#' FSSD statistic and null calibration use disjoint held-out rows.
+#' Selects the test locations \eqn{L = \{v_1,\ldots,v_J\}} and, when the
+#' kernel exposes one, the squared kernel scale \eqn{\rho} on training rows.
+#' The FSSD statistic and null calibration use disjoint held-out rows.
 #'
 #' @details
-#' The function first splits `X` into training and held-out rows. On the training
-#' rows it selects `L` and, when applicable, \eqn{h^2} by maximizing
+#' The training criterion to maximize is
 #' \deqn{
-#' C(L,h^2) =
+#' C(L,\rho) =
 #' \frac{\widehat{FSSD}_{train}^2}
 #'      {\sqrt{\widehat{\mathrm{Var}}_{H_1}} + \gamma},
 #' }
@@ -206,30 +202,28 @@ fssd_rand_test <- function(X, score_function,
 #' \eqn{\gamma>0} keeps the denominator away from zero.
 #'
 #' Starting locations are drawn from a Gaussian fitted to the training rows.
-#' When \eqn{h^2} is selected and `scaling = NULL`, it is initialized by a
-#' five-value grid around the training-row median scale. A supplied scale skips
-#' that grid and is used as the starting value. Bounded L-BFGS-B then refines
-#' `L` and \eqn{h^2} jointly.
+#' Bounded L-BFGS-B refines `L` and any optimizable squared scale jointly;
+#' the `scaling` argument specifies how its starting value is chosen.
 #'
-#' After optimization, `L` and the scale are fixed. [compute_tau()],
-#' [fssd_statistic()], and [fssd_null_pvalue()] are evaluated only on the
-#' held-out rows. Conditional on the training rows, the selected `L` and scale
-#' are fixed independently of the test rows, so the fixed-location null
-#' calibration applies.
+#' The selected locations and kernel are fixed for the held-out test.
+#' Conditional on the training rows, these choices are independent of the test
+#' rows, as required by the null calibration in [fssd_null_pvalue()].
 #' @inheritParams fssd_test
-#' @param scaling Starting positive squared kernel scale. `NULL` initializes it
-#'   from a median-based training grid. Supplying a value skips that grid but
-#'   does not hold \eqn{h^2} fixed when the kernel provides `set_scale_fn`. A
-#'   scale stored in a `SteinKernel` object is the starting value and takes
-#'   precedence.
+#' @param scaling Starting positive squared kernel scale (\eqn{h^2} for
+#'   Gaussian RBF, \eqn{c^2} for IMQ). `NULL` uses a five-value grid around the
+#'   training-row median squared scale when the kernel needs one. Supplying a
+#'   value skips that grid but does not fix an optimizable squared scale.
+#'   A finite squared scale in a
+#'   supplied `SteinKernel` is the starting value and takes precedence;
+#'   `scaling` is ignored when the kernel exposes no squared scale.
 #' @param seed Optional RNG seed for splitting rows, drawing starting locations,
 #'   and simulating held-out null draws.
 #' @return
 #' An object of class `htest`. `statistic` is
 #' \eqn{S_{n_{test}}=n_{test}\widehat{FSSD}^2}, computed on the held-out rows;
 #' `p.value` is obtained from the held-out plug-in null calibration. `info`
-#' contains `L`, the realized split sizes, optimized scale, objective value,
-#' objective-function count, and optimizer convergence code.
+#' contains `V`, the realized split sizes, optimized squared scale, objective
+#' value, objective-function count, and optimizer convergence code.
 #' @examples
 #' X <- matrix(rnorm(40), ncol = 1)
 #' score_function <- function(x) -as.matrix(x)
@@ -255,10 +249,6 @@ fssd_opt_test <- function(X, score_function,
   }
 
   run_opt <- function() {
-    x_mat <- .as_rows(X, "X", 4L)
-    scores <- .as_score_matrix(score_function(x_mat), x_mat)
-    n <- nrow(x_mat)
-
     J <- validate_integer(J, "J")
     n_simulations <- validate_integer(n_simulations, "n_simulations")
     maxit <- validate_integer(maxit, "maxit")
@@ -271,6 +261,11 @@ fssd_opt_test <- function(X, score_function,
     }
     train_ratio <- .validate_fssd_train_ratio(train_ratio)
 
+    x_mat <- .as_rows(X, "X", 4L)
+    scores <- .as_score_matrix(score_function(x_mat), x_mat)
+    n <- nrow(x_mat)
+
+    # Keep at least two rows in each disjoint split.
     n_train <- max(2L, min(floor(train_ratio * n), n - 2L))
     idx_train <- sample.int(n, size = n_train, replace = FALSE)
     idx_test <- setdiff(seq_len(n), idx_train)
@@ -300,6 +295,7 @@ fssd_opt_test <- function(X, score_function,
       use_scale_grid = prep$used_default_scale
     )
 
+    # Freeze tuned values before evaluating the held-out rows.
     engine_res <- .compute_fssd_test(
       X = x_test,
       scores = scores_test,
@@ -347,7 +343,7 @@ fssd_opt_test <- function(X, score_function,
 }
 
 
-# ---- Public Computation Primitives ---------------------------------------
+# Public computation primitives
 
 #' Compute the FSSD feature matrix
 #'
@@ -370,21 +366,16 @@ fssd_opt_test <- function(X, score_function,
 #'     \operatorname{vec}\{\xi_p(x_i,v_1),\ldots,\xi_p(x_i,v_J)\}
 #'   \in \mathbb{R}^{dJ}.
 #' }
-#' The block of `d` columns associated with row `j` of `V` contains
-#' \eqn{\xi_p(x_i,v_j)/\sqrt{dJ}}.
-#'
-#' This function only constructs the features. For the fixed-location null
-#' calibration, `L` and the kernel, including its scale, must be fixed
-#' independently of the rows in `X`, or selected using separate training data.
-#'
 #' @param X Numeric \eqn{\tilde n\times d} sample matrix.
 #' @param scores Numeric \eqn{\tilde n\times d} score matrix for `X`.
 #' @param V Numeric `J x d` matrix representing `L`, one test location per row.
-#' @param kernel_obj Stein kernel object.
+#' @param kernel_obj Stein kernel object. A Gaussian RBF kernel must have a
+#'   fixed positive bandwidth.
 #'
 #' @return
 #' Numeric \eqn{\tilde n \times dJ} matrix. Row `i` is `tau(x_i)`; columns are
 #' ordered by test location and then coordinate.
+#' @seealso [fssd_statistic()], [fssd_null_pvalue()]
 #' @examples
 #' X <- matrix(c(-1, 0, 1), ncol = 1)
 #' scores <- -X
@@ -407,9 +398,7 @@ compute_tau <- function(X, scores, V, kernel_obj) {
   if (ncol(v_mat) != ncol(x_mat) || nrow(v_mat) < 1) {
     stop("V must be a numeric matrix with ncol(V) == ncol(X)", call. = FALSE)
   }
-  if (!inherits(kernel_obj, "SteinKernel")) {
-    stop("kernel_obj must be a SteinKernel object", call. = FALSE)
-  }
+  require_fixed_gaussian_rbf(kernel_obj, "compute_tau")
 
   .compute_fssd_tau(x_mat, scores_mat, v_mat, kernel_obj)
 }
@@ -426,10 +415,9 @@ compute_tau <- function(X, scores, V, kernel_obj) {
     k_xv <- eval_kernel(kernel_obj, X, v_one)
     grad_arr <- grad_x_kernel(kernel_obj, X, v_one)
 
-    grad_k <- matrix(0, nrow = n, ncol = d)
-    for (l in seq_len(d)) grad_k[, l] <- grad_arr[, 1, l]
-
+    grad_k <- matrix(grad_arr[, 1, ], nrow = n, ncol = d)
     xi <- (scores * as.numeric(k_xv[, 1]) + grad_k) * scale_fac
+    # Each location occupies one d-column block of tau.
     tau[, ((j - 1L) * d + 1L):(j * d)] <- xi
   }
 
@@ -453,7 +441,7 @@ compute_tau <- function(X, scores, V, kernel_obj) {
 #' Diagonal terms are excluded because population FSSD uses two independent
 #' draws. Although population `FSSD^2` is nonnegative, its unbiased
 #' off-diagonal estimator and the returned \eqn{S_{\tilde n}} can be negative
-#' in finite samples. This function does not compute a p-value.
+#' in finite samples.
 #'
 #' @param tau_matrix Numeric \eqn{\tilde n\times dJ} feature matrix returned by
 #'   [compute_tau()].
@@ -477,6 +465,7 @@ fssd_statistic <- function(tau_matrix) {
 .fssd_unscaled_u_statistic <- function(tau) {
   n <- nrow(tau)
   sum_tau <- colSums(tau)
+  # Expand the squared sum, then remove the diagonal terms.
   as.numeric((sum(sum_tau * sum_tau) - sum(rowSums(tau * tau))) / (n * (n - 1)))
 }
 
@@ -511,10 +500,8 @@ fssd_statistic <- function(tau_matrix) {
 #' \widehat p = \frac{1}{B}\sum_{b=1}^B
 #'   \mathbf{1}\{S_{\tilde n}^{*(b)} \ge S_{\tilde n}\}.
 #' }
-#' The observed statistic and null draws are on the same
-#' \eqn{S_{\tilde n}=\tilde n\widehat{FSSD}^2} scale. The returned proportion
-#' does not use an add-one correction. The simulated law is the
-#' large-\eqn{\tilde n} limit of \eqn{S_{\tilde n}}, so the test holds its
+#' The returned proportion does not use an add-one correction. The simulated
+#' law is the large-\eqn{\tilde n} limit of \eqn{S_{\tilde n}}, so the test holds its
 #' nominal level only asymptotically.
 #'
 #' @param tau_matrix Numeric \eqn{\tilde n\times dJ} feature matrix returned by
@@ -555,10 +542,12 @@ fssd_null_pvalue <- function(tau_matrix, statistic, n_simulations = 2000) {
 .fssd_null_pvalue_core <- function(tau, statistic, n_simulations) {
   sigma_tau_hat <- .fssd_tau_covariance(tau)
   eigvals <- eigen(sigma_tau_hat, symmetric = TRUE, only.values = TRUE)$values
+  # Discard small negative eigenvalues caused by roundoff.
   eigvals[eigvals < 0] <- 0
 
   z <- matrix(stats::rnorm(n_simulations * length(eigvals)),
               nrow = n_simulations, ncol = length(eigvals))
+  # Centered chi-square terms form the asymptotic null draws.
   chi_terms <- z^2 - 1
   s_null <- as.numeric(chi_terms %*% eigvals)
 
@@ -571,7 +560,7 @@ fssd_null_pvalue <- function(tau_matrix, statistic, n_simulations = 2000) {
 }
 
 
-# ---- Computation Engines -------------------------------------------------
+# Computation engines
 
 # Final evaluation shared by FSSD-rand and FSSD-opt: build tau, compute
 # n * FSSDhat^2, and simulate its asymptotic null distribution.
@@ -600,7 +589,7 @@ fssd_null_pvalue <- function(tau_matrix, statistic, n_simulations = 2000) {
   n_params <- d * J + if (has_kernel_param) 1L else 0L
   if (n < n_params) {
     warning(sprintf(
-      "Number of optimization parameters (%s) exceeds the training sample size; FSSD-opt is ill-posed.",
+      "FSSD-opt has more parameters (%s) than training rows; increase `train_ratio` or reduce `J`.",
       if (has_kernel_param) "d*J+1" else "d*J"
     ), call. = FALSE)
   }
@@ -616,6 +605,7 @@ fssd_null_pvalue <- function(tau_matrix, statistic, n_simulations = 2000) {
   scale_grid <- scale_grid_objectives <- NULL
 
   if (has_kernel_param && use_scale_grid) {
+    # Pick a stable starting scale before joint optimization.
     scale_grid <- .fssd_scale_grid(scale2_init)
     grid_res <- .fssd_grid_search_scale(
       X = X_train,
@@ -646,16 +636,17 @@ fssd_null_pvalue <- function(tau_matrix, statistic, n_simulations = 2000) {
     opt_bounds$upper[scale_idx] <- sqrt(opt_bounds$upper[scale_idx])
   }
 
-  # Optimize sqrt(scale2) for conditioning.
+  # Optimize sqrt(scale2) for better conditioning.
   par0 <- if (has_kernel_param) {
     c(as.numeric(t(v_init)), sqrt(scale2_init))
   } else {
     as.numeric(t(v_init))
   }
-  par0 <- .fssd_project_parameters(par0, opt_bounds$lower, opt_bounds$upper)
+  par0 <- pmin(pmax(par0, opt_bounds$lower), opt_bounds$upper)
 
   cache <- new.env(parent = emptyenv())
   objective_at <- function(par) {
+    # optim requests the value and gradient at the same point.
     if (!is.null(cache$par) && length(cache$par) == length(par) && all(cache$par == par)) {
       return(cache$objective_grad)
     }
@@ -671,6 +662,7 @@ fssd_null_pvalue <- function(tau_matrix, statistic, n_simulations = 2000) {
       gamma = gamma
     )
     if (has_kernel_param) {
+      # Map the scale2 gradient back through scale2 = par^2.
       objective_grad$grad[scale_idx] <-
         objective_grad$grad[scale_idx] * (2 * par[scale_idx])
     }
@@ -741,6 +733,7 @@ fssd_null_pvalue <- function(tau_matrix, statistic, n_simulations = 2000) {
   mu_tau <- colMeans(tau)
   sum_tau <- colSums(tau)
   fssd2 <- .fssd_unscaled_u_statistic(tau)
+  # Differentiate the U-statistic with respect to each feature row.
   grad_fssd2_tau <- (2 / (n * (n - 1L))) *
     (matrix(sum_tau, n, n_features, byrow = TRUE) - tau)
 
@@ -750,6 +743,7 @@ fssd_null_pvalue <- function(tau_matrix, statistic, n_simulations = 2000) {
   sigma_h1 <- sqrt(max(sigma_h1_sq, 0))
   denom <- sigma_h1 + gamma
 
+  # Differentiate the alternative standard deviation in the denominator.
   sigma_mu <- as.numeric(sigma_tau %*% mu_tau)
   c_mu <- as.numeric(centered_tau %*% mu_tau)
   grad_sigma_sq <-
@@ -769,6 +763,7 @@ fssd_null_pvalue <- function(tau_matrix, statistic, n_simulations = 2000) {
   grad_param <- 0
 
   for (j in seq_len(J)) {
+    # Chain feature gradients back to this location and the kernel scale.
     g_block <- grad_obj_tau[, ((j - 1L) * d + 1L):(j * d), drop = FALSE]
     fssd_grads <- grad_theta_v_kernel(
       obj = kernel_obj_current,
@@ -787,26 +782,7 @@ fssd_null_pvalue <- function(tau_matrix, statistic, n_simulations = 2000) {
   list(value = fssd2 / denom, grad = grad_par)
 }
 
-# ---- Helpers: input preparation and validation ---------------------------
-
-.prepare_fssd_inputs <- function(X, score_function, min_rows,
-                                 kernel = c("gaussian_rbf", "imq"),
-                                 scaling = NULL,
-                                 imq_beta = -0.5) {
-  if (!is.function(score_function)) {
-    stop("`score_function` must be a function", call. = FALSE)
-  }
-  x_mat <- .as_rows(X, "X", min_rows)
-  scores <- .as_score_matrix(score_function(x_mat), x_mat)
-  kernel_prep <- .prepare_fssd_kernel(
-    X = x_mat,
-    kernel = kernel,
-    scaling = scaling,
-    imq_beta = imq_beta
-  )
-
-  c(list(X = x_mat, scores = scores), kernel_prep)
-}
+# Helpers input preparation and validation
 
 .prepare_fssd_kernel <- function(X,
                                  kernel = c("gaussian_rbf", "imq"),
@@ -822,7 +798,11 @@ fssd_null_pvalue <- function(tau_matrix, statistic, n_simulations = 2000) {
 
     if (!is.null(scale2) && !is.finite(scale2)) {
       if (is.null(scaling)) {
-        scaling <- find_median_distance(x_mat)
+        scaling <- if (inherits(kernel_obj, "SteinKernel_gaussian_rbf")) {
+          resolve_gaussian_rbf_scale2(kernel_obj, x_mat)
+        } else {
+          find_median_distance(x_mat)
+        }
         used_default_scale <- TRUE
       }
       scaling <- .validate_fssd_positive_scalar(scaling, "scaling")
@@ -864,7 +844,7 @@ fssd_null_pvalue <- function(tau_matrix, statistic, n_simulations = 2000) {
 }
 
 
-# ---- Helpers: FSSD-opt optimization support ------------------------------
+# Helpers FSSD-opt optimization support
 
 .fssd_scale_grid <- function(center) {
   center * 2^seq(-3, 3, length.out = 5)
@@ -914,45 +894,30 @@ fssd_null_pvalue <- function(tau_matrix, statistic, n_simulations = 2000) {
   )
 }
 
-.fssd_project_parameters <- function(par, lower, upper) {
-  pmin(pmax(par, lower), upper)
+
+# Helpers covariance, location init, and numerical stability
+
+.fssd_symmetric_covariance <- function(s) {
+  if (any(!is.finite(s))) {
+    stop("the feature covariance is not finite; rescale the sample", call. = FALSE)
+  }
+  s / 2 + t(s) / 2
 }
-
-
-# ---- Helpers: covariance, location init, and numerical stability ---------
 
 .fssd_tau_covariance <- function(tau) {
   centered <- sweep(tau, 2, colMeans(tau), "-")
-  cov_hat <- crossprod(centered) / nrow(tau)
-  cov_hat[!is.finite(cov_hat)] <- 0
-  (cov_hat + t(cov_hat)) / 2
-}
-
-.safe_covariance <- function(x) {
-  if (ncol(x) == 1) {
-    v <- stats::var(x[, 1])
-    if (!is.finite(v) || v < 0) v <- 0
-    return(matrix(v, 1, 1))
-  }
-
-  s <- stats::cov(x)
-  s[!is.finite(s)] <- 0
-  (s + t(s)) / 2
-}
-
-# Draw Gaussian rows after flooring nonpositive covariance eigenvalues.
-.sample_gaussian_rows <- function(n, mu, sigma) {
-  d <- length(mu)
-  sigma <- (sigma + t(sigma)) / 2
-  eig <- eigen(sigma, symmetric = TRUE)
-  vals <- pmax(eig$values, 1e-10)
-  root <- eig$vectors %*% diag(sqrt(vals), nrow = d)
-  z <- matrix(stats::rnorm(n * d), nrow = n, ncol = d)
-  sweep(z %*% t(root), 2, mu, "+")
+  .fssd_symmetric_covariance(crossprod(centered) / nrow(tau))
 }
 
 .fssd_init_locations <- function(X, J, cov_reg = 0) {
-  sigma <- .safe_covariance(X)
-  if (cov_reg > 0) diag(sigma) <- diag(sigma) + cov_reg
-  .sample_gaussian_rows(J, colMeans(X), sigma)
+  d <- ncol(X)
+  # Build a stable covariance root for Gaussian location draws.
+  sigma <- .fssd_symmetric_covariance(
+    if (d == 1L) matrix(max(stats::var(X[, 1]), 0), 1, 1) else stats::cov(X)
+  )
+  diag(sigma) <- diag(sigma) + cov_reg
+  eig <- eigen(sigma, symmetric = TRUE)
+  root <- eig$vectors %*% diag(sqrt(pmax(eig$values, 1e-10)), nrow = d)
+  z <- matrix(stats::rnorm(J * d), nrow = J, ncol = d)
+  sweep(z %*% t(root), 2, colMeans(X), "+")
 }

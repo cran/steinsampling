@@ -30,15 +30,18 @@ fssd_test(
 
 \item{variant}{\code{"opt"} (default) or \code{"rand"}.}
 
-\item{J}{Number of test locations in \code{L}.}
+\item{J}{Number of test locations.}
 
 \item{n_simulations}{Number of null draws.}
 
 \item{kernel}{\code{"gaussian_rbf"}, \code{"imq"}, or a \code{SteinKernel} object.}
 
-\item{scaling}{Positive squared kernel scale. It is final for FSSD-rand and
-an initial value for FSSD-opt. \code{NULL} uses a median-based value. A scale in
-a supplied \code{SteinKernel} takes precedence.}
+\item{scaling}{Positive squared kernel scale: \eqn{h^2} for Gaussian RBF,
+\eqn{c^2} for IMQ; a custom kernel may expose its own. It is final for
+FSSD-rand and an initial value for FSSD-opt. \code{NULL} uses a median-based
+value when the kernel needs a squared scale. A finite squared scale in a
+supplied \code{SteinKernel} takes precedence; \code{scaling} is ignored when the
+kernel exposes no squared scale.}
 
 \item{train_ratio}{Fraction of rows requested for FSSD-opt training.}
 
@@ -46,10 +49,11 @@ a supplied \code{SteinKernel} takes precedence.}
 
 \item{maxit}{Maximum L-BFGS-B iterations for FSSD-opt.}
 
-\item{locs_bounds_frac}{Location-bound width in fitted standard deviations.}
+\item{locs_bounds_frac}{Number of training-set standard deviations added
+below each coordinate minimum and above each coordinate maximum.}
 
-\item{scale_lower, scale_upper}{Bounds for the optimized squared kernel
-scale.}
+\item{scale_lower, scale_upper}{Bounds applied to the squared kernel scale
+when that scale is optimized.}
 
 \item{seed}{Optional RNG seed.}
 
@@ -57,30 +61,18 @@ scale.}
 }
 \value{
 An \code{htest} object. \code{statistic} is
-\eqn{S_{\tilde n}=\tilde n\widehat{FSSD}^2}; \code{p.value} is its simulated
-right-tail p-value; \code{info} records \code{L} and variant-specific diagnostics.
+\eqn{S_{\tilde n}=\tilde n\widehat{FSSD}^2}, where \eqn{\tilde n} is the
+held-out size for FSSD-opt and \eqn{n} for FSSD-rand; \code{p.value} is its
+simulated right-tail p-value; \code{info$V} is the test-location matrix, and
+\code{info} contains variant-specific diagnostics.
 }
 \description{
-Runs one of two Finite Set Stein Discrepancy tests. With
-\code{variant = "opt"}, the test locations
-\eqn{L = \{v_1,\ldots,v_J\}} are selected on training rows. For the
-built-in Gaussian RBF and IMQ kernels, and for custom kernels created with
-\code{set_scale_fn}, the squared kernel scale \eqn{h^2} is selected as well. The
-statistic and null calibration use held-out rows. With \code{variant = "rand"},
-all rows of \code{X} are used both to select \code{L} and any default scale and to
-compute the statistic and null approximation, so its p-value is heuristic.
-}
-\details{
-\code{variant = "opt"} calls \code{\link[=fssd_opt_test]{fssd_opt_test()}}, and \code{variant = "rand"} calls
-\code{\link[=fssd_rand_test]{fssd_rand_test()}}. Both variants construct the FSSD features, compute
-\deqn{
-S_{\tilde n} = \tilde n\widehat{FSSD}^2,
-}
-and perform the plug-in null calibration implemented by
-\code{\link[=fssd_null_pvalue]{fssd_null_pvalue()}}. Here \eqn{\tilde n = n_{test}} for FSSD-opt and
-\eqn{\tilde n = n} for FSSD-rand. The functions \code{\link[=compute_tau]{compute_tau()}},
-\code{\link[=fssd_statistic]{fssd_statistic()}}, and \code{\link[=fssd_null_pvalue]{fssd_null_pvalue()}} expose these calculations
-separately.
+Runs a Finite Set Stein Discrepancy goodness-of-fit test. With
+\code{variant = "opt"} (the default), the test locations and any squared kernel
+scale are selected on training rows, and the statistic and null calibration
+use held-out rows; see \code{\link[=fssd_opt_test]{fssd_opt_test()}}. With \code{variant = "rand"}, all rows
+of \code{X} serve both purposes, so the p-value is heuristic; see
+\code{\link[=fssd_rand_test]{fssd_rand_test()}}.
 }
 \examples{
 X <- matrix(rnorm(40), ncol = 1)
@@ -91,4 +83,8 @@ fssd_test(X, score_function, J = 1, scaling = 1,
 
 fssd_test(X, score_function, variant = "rand", J = 1,
           scaling = 1, n_simulations = 10)
+}
+\references{
+Jitkrittum et al. (2017), A Linear-Time Kernel Goodness-of-Fit
+Test.
 }

@@ -29,11 +29,12 @@ sample matrix and returns the \eqn{n\times d} matrix with row
 \item{boot_method}{Bootstrap method. Currently only
 \code{"multinomial_centered"} is supported.}
 
-\item{scaling}{Positive squared scale passed to the kernel. For the built-in
-RBF and IMQ kernels this is, respectively, \eqn{h^2} and \eqn{c^2}.
-\code{NULL} uses the squared median pairwise distance.}
+\item{scaling}{Positive squared scale passed to the kernel unless a supplied
+\code{SteinKernel} already has one. For built-in RBF and IMQ kernels this is,
+respectively, \eqn{h^2} and \eqn{c^2}. \code{NULL} uses the squared median
+pairwise distance.}
 
-\item{nboot}{Positive number of bootstrap draws \eqn{B}.}
+\item{nboot}{Positive integer number of bootstrap draws \eqn{B}.}
 
 \item{kernel}{Kernel choice: \code{"gaussian_rbf"}, \code{"imq"}, or a \code{SteinKernel}
 object.}
@@ -41,19 +42,21 @@ object.}
 \item{return_raw_boot}{Logical. If \code{TRUE}, include the \eqn{B} bootstrap
 draws in the result.}
 
-\item{block_size}{Positive number of rows per block. \code{NULL} uses
+\item{block_size}{Positive integer number of rows per block. \code{NULL} uses
 \code{min(1024, n)} when \code{n > block_threshold} and \code{n} otherwise. Blocking
 changes memory use, not the test definition.}
 
-\item{block_threshold}{Positive sample-size threshold above which blockwise
-computation is used.}
+\item{block_threshold}{Positive integer sample-size threshold above which
+blockwise computation is used.}
 
 \item{imq_beta}{Finite exponent \eqn{\beta<0} of the built-in IMQ kernel.}
 }
 \value{
 An \code{htest} object. \code{statistic} is \eqn{T_n=nU_n}; \code{p.value} is the
-bootstrap p-value above. If \code{return_raw_boot = TRUE}, \code{bootstrap_samples}
-contains \eqn{T_n^{*(1)},\ldots,T_n^{*(B)}}.
+bootstrap p-value above. \code{parameter} records \code{nboot} and \code{scaling}, plus
+\code{imq_beta} for an IMQ kernel; \code{kernel} contains the resolved \code{SteinKernel}
+object. If \code{return_raw_boot = TRUE}, \code{bootstrap_samples} contains
+\eqn{T_n^{*(1)},\ldots,T_n^{*(B)}}.
 }
 \description{
 Tests whether independent observations come from a target distribution
@@ -73,9 +76,16 @@ Null calibration uses the centered multinomial bootstrap implemented by
 draws, the reported right-tail p-value is
 \deqn{\widehat p=\frac{1+\sum_{b=1}^B
 \mathbf{1}\{T_n^{*(b)}\ge T_n\}}{B+1}.}
+
+Warns when off-diagonal Stein-kernel magnitudes are negligible relative to
+the diagonal, because the resulting bootstrap calibration is degenerate.
 }
 \examples{
 X <- matrix(rnorm(10), ncol = 1)
 score_function <- function(x) -as.matrix(x)
 ksd_u_test(X, score_function, nboot = 10)
+}
+\references{
+Liu, Lee, and Jordan (2016), A Kernelized Stein Discrepancy for
+Goodness-of-Fit Tests.
 }

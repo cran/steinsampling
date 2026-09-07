@@ -3,18 +3,14 @@
 \name{print.stein_points}
 \alias{print.stein_points}
 \alias{print.stein_codescent}
-\alias{print.svgd}
 \title{Print a Stein point set}
 \usage{
 \method{print}{stein_points}(x, ...)
 
 \method{print}{stein_codescent}(x, ...)
-
-\method{print}{svgd}(x, ...)
 }
 \arguments{
-\item{x}{An object returned by \code{\link[=stein_points]{stein_points()}}, \code{\link[=stein_codescent]{stein_codescent()}}, or
-\code{\link[=svgd]{svgd()}}.}
+\item{x}{An object returned by \code{\link[=stein_points]{stein_points()}} or \code{\link[=stein_codescent]{stein_codescent()}}.}
 
 \item{...}{Ignored.}
 }
@@ -22,7 +18,8 @@
 \code{x}, invisibly.
 }
 \description{
-Prints the point matrix size, evaluation count, and available diagnostic.
+Prints the point matrix size and final KSD or coordinate-update count, plus
+the corresponding evaluation total.
 }
 \examples{
 score <- function(X) -as.matrix(X)

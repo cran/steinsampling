@@ -1,10 +1,8 @@
-# Stein variational gradient descent. `svgd()` moves a supplied particle
-# matrix; the two private helpers compute its adaptive RBF bandwidth and the
-# base-kernel attraction and repulsion terms.
+# SVGD particle updates and adaptive-kernel helpers.
 
 #' Transport particles with Stein variational gradient descent
 #'
-#' Moves a fixed ensemble of particles toward a target distribution specified
+#' Transports an initial set of particles toward a target distribution specified
 #' by its score function. SVGD uses a base kernel and its first derivative; it
 #' does not construct the pairwise Stein kernel \eqn{k_{0,p}}.
 #'
@@ -20,23 +18,24 @@
 #'
 #' The update is
 #' \deqn{x_i^{(t+1)}=x_i^{(t)}+\epsilon\widetilde g_i^{(t)},}
-#' where \eqn{\epsilon} is `step_size`. By default, operations being entrywise,
+#' where \eqn{\epsilon} is `step_size`. By default, \eqn{\widetilde g} is the
+#' AdaGrad-style rescaling used by the original implementation of Liu and Wang
+#' (2016): entrywise,
 #' \deqn{H^{(1)}=g^{(1)}\odot g^{(1)},\qquad
-#' H^{(t)}=\alpha H^{(t-1)}+(1-\alpha)g^{(t)}\odot g^{(t)},}
-#' and
-#' \deqn{\widetilde g^{(t)}=
-#' \frac{g^{(t)}}{10^{-6}+\sqrt{H^{(t)}}}.}
-#' Supplying `adj_grad` replaces this adjustment but not the outer
-#' multiplication by `step_size`. Use
-#' `adj_grad = function(grad, ...) grad` for the unadjusted direction.
+#' H^{(t)}=\alpha H^{(t-1)}+(1-\alpha)g^{(t)}\odot g^{(t)},\qquad
+#' \widetilde g^{(t)}=\frac{g^{(t)}}{10^{-6}+\sqrt{H^{(t)}}}.}
+#' Supplying `adj_grad` replaces this rescaling but not the outer
+#' multiplication by `step_size`; `adj_grad = function(grad, ...) grad` gives
+#' \eqn{\widetilde g^{(t)}=g^{(t)}}, the plain update as stated by Liu and
+#' Wang (2016).
 #'
 #' For a Gaussian RBF kernel without a fixed bandwidth, let \eqn{\rho_t} be the
 #' median pairwise Euclidean distance between the current particles. The
 #' bandwidth is recomputed at every iteration as
 #' \deqn{h_t=\frac{\rho_t}{\sqrt{2\log m}}.}
-#' For one particle, \eqn{h_t=1}. A zero or non-finite median requires a fixed
-#' positive bandwidth. Fixed-bandwidth RBF and other kernels retain their
-#' supplied parameters.
+#' For one particle, \eqn{h_t=1}. If the median is zero or non-finite, `svgd()`
+#' stops; supply a fixed positive RBF bandwidth. Fixed-bandwidth RBF and other
+#' kernels retain their supplied parameters.
 #'
 #' @param x0 Finite numeric vector or matrix containing the initial particles.
 #'   Rows are particles and columns are coordinates; a vector is treated as an
@@ -67,6 +66,7 @@
 #'   included.
 #' * `kernel`, `n_iter`, and `step_size`: supplied update settings.
 #' * `method` and `call`: method label and matched call.
+#' @references Liu and Wang (2016), Stein Variational Gradient Descent.
 #' @examples
 #' x0 <- matrix(seq(-2, 2, length.out = 5), ncol = 1)
 #' target_score <- function(x) -x
@@ -117,11 +117,13 @@ svgd <- function(x0, score_function,
 
   for (iter in seq_len(n_iter)) {
     scores <- .as_score_matrix(score_function(particles), particles)
+    # Combine kernel-weighted scores with particle repulsion.
     kernel_terms <- .compute_svgd_kernel(particles, kernel)
     raw_direction <- (
       kernel_terms$kernel_matrix %*% scores + kernel_terms$repulsion
     ) / nrow(particles)
 
+    # Update the elementwise second moment used for adaptive scaling.
     if (iter == 1L) {
       historical_grad <- raw_direction^2
     } else {
@@ -151,6 +153,7 @@ svgd <- function(x0, score_function,
       )
     }
 
+    # step_size scales both default and custom directions.
     particles <- particles + step_size * direction
 
     if (trace_enabled) {
@@ -159,9 +162,9 @@ svgd <- function(x0, score_function,
     }
   }
 
-  # One further score evaluation so that `D` matches the returned particles;
-  # the loop's own scores belong to the particles before the last update.
+  # Recompute scores after the final particle update.
   final_scores <- .as_score_matrix(score_function(particles), particles)
+  # Count only score evaluations used by particle updates.
   n_eval <- rep(nrow(particles), n_iter)
 
   structure(
@@ -178,8 +181,39 @@ svgd <- function(x0, score_function,
 }
 
 
+#' Print an SVGD fit
+#'
+#' @param x An object returned by [svgd()].
+#' @param ... Ignored.
+#' @return `x`, invisibly.
+#' @export
+print.svgd <- function(x, ...) {
+  cat(sprintf(
+    "SVGD  n=%d  d=%d  iterations=%d  step=%g\n",
+    nrow(x$X), ncol(x$X), x$n_iter, x$step_size
+  ))
+  invisible(x)
+}
+
+
+#' Summarize an SVGD fit
+#'
+#' @param object An object returned by [svgd()].
+#' @param ... Ignored.
+#' @return A `"summary.stein_points"` object containing the point-set size,
+#'   kernel, iteration settings, update-loop score-evaluation total, and call.
+#' @export
+summary.svgd <- function(object, ...) {
+  out <- .point_set_summary(object, "score evaluations (update loop)")
+  out$n_iter <- object$n_iter
+  out$step_size <- object$step_size
+  out
+}
+
+
 .svgd_median_bandwidth <- function(particles) {
   n <- nrow(particles)
+  # Pairwise bandwidth is undefined for one particle.
   if (n <= 1L) return(1)
 
   med <- stats::median(
@@ -198,14 +232,16 @@ svgd <- function(x0, score_function,
 .compute_svgd_kernel <- function(particles, kernel) {
   kernel_current <- kernel
   if (inherits(kernel_current, "SteinKernel_gaussian_rbf") &&
-      is.null(kernel_current$h2)) {
-    kernel_current$h2 <- .svgd_median_bandwidth(particles)^2
+      is.na(kernel_current$scale2)) {
+    # Recompute an unset RBF bandwidth at each iteration.
+    kernel_current$scale2 <- .svgd_median_bandwidth(particles)^2
   }
 
   n <- nrow(particles)
   kernel_matrix <- eval_kernel(kernel_current, particles)
   grad_array <- grad_x_kernel(kernel_current, particles)
   repulsion <- matrix(0, n, ncol(particles))
+  # Sum grad_xj k(x_j, x_i) over source particles j.
   for (coordinate in seq_len(ncol(particles))) {
     repulsion[, coordinate] <- colSums(
       matrix(grad_array[, , coordinate], nrow = n, ncol = n)

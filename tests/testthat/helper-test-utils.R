@@ -9,6 +9,21 @@ small_x <- function(n = 6L) {
   matrix(seq(-1, 1, length.out = n), ncol = 1)
 }
 
+# The 1D two-component mixture reused across the GMM tests.
+toy_gmm_1d <- function(sigma = array(1, c(1, 1, 2))) {
+  gmm(nComp = 2, mu = c(-1, 1), sigma = sigma, weights = c(0.4, 0.6), d = 1)
+}
+
+# Callbacks that reproduce a Gaussian RBF through the custom-kernel API.
+rbf_like_fns <- function(reference = stein_kernel(type = "gaussian_rbf", h = 1)) {
+  list(
+    eval = function(k, X, Y, M) eval_kernel(reference, X, Y),
+    grad_x = function(k, X, Y, M) grad_x_kernel(reference, X, Y),
+    trace_mixed = function(k, X, Y, M)
+      trace_mixed_kernel(reference, X, Y)
+  )
+}
+
 expect_finite_numeric <- function(x) {
   expect_true(is.numeric(x))
   expect_true(all(is.finite(x)))
@@ -45,38 +60,28 @@ toy_objective_2d <- function(X) {
 # ---- Scale-hook fixtures -------------------------------------------------
 # Both fixtures delegate to Gaussian RBF, providing an exact scale-hook reference.
 
-rbf_at <- function(h2) stein_kernel(type = "gaussian_rbf", h = sqrt(h2))
+rbf_at <- function(h2) kernel_scale2(stein_kernel(type = "gaussian_rbf"), h2)
 
 steinkernel_toy <- function(h2 = 1) {
   steinsampling:::new_stein_kernel(
-    "toy", h2 = h2,
-    eval        = function(k, X, Y, M) eval_kernel(rbf_at(k$h2), X, Y),
-    grad_x      = function(k, X, Y, M) grad_x_kernel(rbf_at(k$h2), X, Y),
-    trace_mixed = function(k, X, Y, M) trace_mixed_kernel(rbf_at(k$h2), X, Y),
+    "toy", scale2 = h2,
+    eval        = function(k, X, Y, M) eval_kernel(rbf_at(k$scale2), X, Y),
+    grad_x      = function(k, X, Y, M) grad_x_kernel(rbf_at(k$scale2), X, Y),
+    trace_mixed = function(k, X, Y, M) trace_mixed_kernel(rbf_at(k$scale2), X, Y),
     fssd_grad   = function(k, X, vj, grads_X, g_block, M)
-      grad_theta_v_kernel(rbf_at(k$h2), X, vj, grads_X, g_block),
-    scale_get   = function(k) k$h2,
-    scale_set   = function(k, v) { k$h2 <- v; k }
+      grad_theta_v_kernel(rbf_at(k$scale2), X, vj, grads_X, g_block)
   )
 }
 
-custom_rbf_at_scale <- function(obj, h2) {
-  b <- rbf_at(h2)
-  obj$eval_fn <- function(X, Y = NULL, precon = NULL) eval_kernel(b, X, Y)
-  obj$grad_x_fn <- function(X, Y = NULL, precon = NULL) grad_x_kernel(b, X, Y)
-  obj$trace_mixed_fn <- function(X, Y = NULL, precon = NULL) trace_mixed_kernel(b, X, Y)
-  obj
-}
-
-custom_rbf <- function(scale_init = NULL, set_scale_fn = NULL) {
-  cb <- custom_rbf_at_scale(list(), if (is.null(scale_init)) 1 else scale_init)
+custom_rbf <- function(scale2 = NULL) {
+  fixed <- function(k) if (is.null(k$scale2)) 1 else k$scale2
   custom_stein_kernel(
-    cb$eval_fn, cb$grad_x_fn, cb$trace_mixed_fn,
-    grad_theta_v_fn = function(X, vj, grads_X, g_block, obj) {
-      h2 <- if (is.null(obj$scale_init)) 1 else obj$scale_init
-      grad_theta_v_kernel(rbf_at(h2), X, vj, grads_X, g_block)
-    },
-    scale_init = scale_init, set_scale_fn = set_scale_fn
+    eval        = function(k, X, Y, M) eval_kernel(rbf_at(fixed(k)), X, Y),
+    grad_x      = function(k, X, Y, M) grad_x_kernel(rbf_at(fixed(k)), X, Y),
+    trace_mixed = function(k, X, Y, M) trace_mixed_kernel(rbf_at(fixed(k)), X, Y),
+    fssd_grad   = function(k, X, vj, grads_X, g_block, M)
+      grad_theta_v_kernel(rbf_at(fixed(k)), X, vj, grads_X, g_block),
+    scale2 = scale2
   )
 }
 

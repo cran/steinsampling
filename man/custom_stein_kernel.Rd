@@ -5,60 +5,58 @@
 \title{Create a Stein kernel from callbacks}
 \usage{
 custom_stein_kernel(
-  eval_fn,
-  grad_x_fn,
-  trace_mixed_fn,
-  grad_theta_v_fn = NULL,
-  scale_init = NULL,
-  set_scale_fn = NULL,
+  eval,
+  grad_x,
+  trace_mixed,
+  fssd_grad = NULL,
+  scale2 = NULL,
+  precon = NULL,
   custom_grad_mode = c("analytic", "numeric")
 )
 }
 \arguments{
-\item{eval_fn, grad_x_fn, trace_mixed_fn}{Callbacks \verb{(X, Y, precon)}.}
+\item{eval, grad_x, trace_mixed}{Callbacks \verb{(k, X, Y, M)}.}
 
-\item{grad_theta_v_fn}{Optional analytic FSSD-opt callback
-\verb{(X, vj, grads_X, g_block, obj)} returning \code{grad_vj} and, when the kernel
+\item{fssd_grad}{Optional analytic FSSD-opt callback
+\verb{(k, X, vj, grads_X, g_block, M)} returning \code{grad_vj} and, when the kernel
 exposes a scale, \code{grad_param}.}
 
-\item{scale_init}{Optional positive starting squared scale. Requires
-\code{set_scale_fn}.}
+\item{scale2}{Optional positive squared scale.}
 
-\item{set_scale_fn}{Optional \verb{(obj, scale2)} returning \code{obj} with its
-scale-dependent callbacks rebuilt.}
+\item{precon}{Optional symmetric positive-definite \eqn{M}.}
 
 \item{custom_grad_mode}{\code{"analytic"} or location-only \code{"numeric"}.}
 }
 \value{
-A custom kernel specification.
+A \code{SteinKernel} object containing the supplied callbacks.
 }
 \description{
 Create a Stein kernel from callbacks
 }
 \details{
-\code{eval_fn}, \code{grad_x_fn}, and \code{trace_mixed_fn} supply the kernel value, its
-first derivative, and its mixed-derivative trace. Each receives \code{X}, \code{Y},
-and \code{precon}; \code{precon} may be \code{NULL} and each callback decides whether to
+\code{eval}, \code{grad_x}, and \code{trace_mixed} supply the kernel value, its
+first derivative, and its mixed-derivative trace. Each receives \code{k}, \code{X},
+\code{Y}, and \code{M}; \code{M} may be \code{NULL} and each callback decides whether to
 use it. For \eqn{X\in\mathbb R^{n_X\times d}} and
-\eqn{Y\in\mathbb R^{n_Y\times d}}, \code{eval_fn} returns the
-\eqn{n_X\times n_Y} matrix \eqn{k(X,Y)}, \code{grad_x_fn} the
+\eqn{Y\in\mathbb R^{n_Y\times d}}, \code{eval} returns the
+\eqn{n_X\times n_Y} matrix \eqn{k(X,Y)}, \code{grad_x} the
 \eqn{n_X\times n_Y\times d} array \eqn{\nabla_x k(X,Y)}, and
-\code{trace_mixed_fn} the \eqn{n_X\times n_Y} matrix
+\code{trace_mixed} the \eqn{n_X\times n_Y} matrix
 \eqn{\mathrm{tr}\{\nabla_x\nabla_y^\top k(X,Y)\}}. Kernel symmetry supplies
-\eqn{\nabla_y k} by reversing the arguments of \code{grad_x_fn}.
+\eqn{\nabla_y k} by reversing the arguments of \code{grad_x}.
 
-KSD uses all three callbacks; FSSD uses only \code{eval_fn} and \code{grad_x_fn}. For
-FSSD-opt a custom kernel must provide \code{grad_theta_v_fn} or use
+KSD uses all three callbacks; FSSD uses only \code{eval} and \code{grad_x}. For
+FSSD-opt a custom kernel must provide \code{fssd_grad} or use
 \code{custom_grad_mode = "numeric"}. A custom kernel can update its scale when
-\code{scale_init} and \code{set_scale_fn} are supplied; that path requires
-\code{grad_theta_v_fn}, because numeric mode differentiates the test locations
+\code{scale2} is supplied; that path requires
+\code{fssd_grad}, because numeric mode differentiates the test locations
 only.
 }
 \examples{
 rbf <- stein_kernel("gaussian_rbf", h = 1)
 custom_stein_kernel(
-  eval_fn        = function(X, Y = NULL, precon = NULL) eval_kernel(rbf, X, Y),
-  grad_x_fn      = function(X, Y = NULL, precon = NULL) grad_x_kernel(rbf, X, Y),
-  trace_mixed_fn = function(X, Y = NULL, precon = NULL) trace_mixed_kernel(rbf, X, Y)
+  eval        = function(k, X, Y, M) eval_kernel(rbf, X, Y),
+  grad_x      = function(k, X, Y, M) grad_x_kernel(rbf, X, Y),
+  trace_mixed = function(k, X, Y, M) trace_mixed_kernel(rbf, X, Y)
 )
 }

@@ -1,6 +1,6 @@
 # Gaussian-mixture targets used by the package examples and tests.
 
-# ---- Public API ----------------------------------------------------------
+# Public API
 
 #' Create a Gaussian mixture model
 #'
@@ -12,9 +12,10 @@
 #' where \eqn{w_k}, \eqn{\mu_k}, and \eqn{\Sigma_k} are the weight, mean, and
 #' covariance of component \eqn{k}. Weights are normalized to sum to one.
 #'
-#' By default, `nComp = 5` and `d = 1`. If `mu` is omitted, centered random
-#' means are generated. If `sigma` is omitted, every component uses the
-#' identity covariance matrix.
+#' With no arguments, `gmm()` creates a one-dimensional five-component mixture.
+#' If `mu` is omitted, its entries are drawn independently from `Uniform(0, 10)`
+#' and centered across components within each coordinate. If `sigma` is omitted,
+#' every component uses the identity covariance matrix.
 #'
 #' @param nComp Number of mixture components. If `NULL`, five components are
 #'   generated.
@@ -44,27 +45,27 @@
 #' model <- gmm(nComp = 3, mu = mu, sigma = sigma,
 #'              weights = c(0.2, 0.4, 0.4), d = 3)
 gmm <- function(nComp = NULL, mu = NULL, sigma = NULL, weights = NULL, d = NULL) {
-  # Do not reset the RNG here; callers control reproducibility with set.seed().
   k <- if (is.null(nComp)) 5L else validate_integer(nComp, "nComp")
 
-  if (!is.null(d)) {
-    d <- validate_integer(d, "d")
-  } else if (!is.null(mu) && !is.null(dim(mu))) {
-    if (length(dim(mu)) != 2L) stop("mu must be a vector or matrix", call. = FALSE)
-    d <- nrow(mu)
-  } else if (!is.null(sigma) && !is.null(dim(sigma))) {
-    sigma_dim <- dim(sigma)
-    if (!length(sigma_dim) %in% c(2L, 3L)) {
-      stop("sigma must be a vector, matrix, or three-dimensional array", call. = FALSE)
+  if (is.null(d)) {
+    if (!is.null(mu) && !is.null(dim(mu))) {
+      if (length(dim(mu)) != 2L) stop("mu must be a vector or matrix", call. = FALSE)
+      d <- nrow(mu)
+    } else if (!is.null(sigma) && !is.null(dim(sigma))) {
+      sigma_dim <- dim(sigma)
+      if (!length(sigma_dim) %in% c(2L, 3L)) {
+        stop("sigma must be a vector, matrix, or three-dimensional array", call. = FALSE)
+      }
+      d <- sigma_dim[1L]
+    } else {
+      d <- 1L
     }
-    d <- sigma_dim[1L]
-  } else {
-    d <- 1L
   }
   d <- validate_integer(d, "d")
 
   if (is.null(mu)) {
     mu <- matrix(stats::runif(d * k, 0, 10), nrow = d, ncol = k)
+    # Keep randomly generated mixtures centered near the origin.
     mu <- sweep(mu, 1L, rowMeans(mu), "-")
   } else {
     if (!is.numeric(mu) || any(!is.finite(mu))) {
@@ -103,23 +104,21 @@ gmm <- function(nComp = NULL, mu = NULL, sigma = NULL, weights = NULL, d = NULL)
       if (!identical(dim(sigma), c(d, d))) {
         stop("matrix sigma must have dimensions d x d", call. = FALSE)
       }
+      # Reuse one covariance matrix for every component.
       sigma <- array(rep(as.numeric(sigma), k), dim = c(d, d, k))
-    } else if (length(sigma_dim) != 3L ||
-      !identical(as.integer(sigma_dim), c(d, d, k))) {
+    } else if (!identical(sigma_dim, c(d, d, k))) {
       stop("sigma must have dimensions d x d x nComp", call. = FALSE)
     }
   }
 
+  spd_message <- "each component covariance must be symmetric positive definite"
   for (component_idx in seq_len(k)) {
+    # Symmetrize roundoff before checking positive definiteness.
     sigma_k <- matrix(sigma[, , component_idx], nrow = d, ncol = d)
     sym_tol <- sqrt(.Machine$double.eps) * max(1, max(abs(sigma_k)))
-    if (max(abs(sigma_k - t(sigma_k))) > sym_tol) {
-      stop("each component covariance must be symmetric positive definite", call. = FALSE)
-    }
+    if (max(abs(sigma_k - t(sigma_k))) > sym_tol) stop(spd_message, call. = FALSE)
     sigma_k <- (sigma_k + t(sigma_k)) / 2
-    tryCatch(chol(sigma_k), error = function(e) {
-      stop("each component covariance must be symmetric positive definite", call. = FALSE)
-    })
+    tryCatch(chol(sigma_k), error = function(e) stop(spd_message, call. = FALSE))
     sigma[, , component_idx] <- sigma_k
   }
 
@@ -145,7 +144,69 @@ gmm <- function(nComp = NULL, mu = NULL, sigma = NULL, weights = NULL, d = NULL)
 #' @export
 print.gmm <- function(x, ...) {
   cat(sprintf("Gaussian mixture  K=%d  d=%d\n", x$nComp, x$d))
-  cat("  weights:", format(x$weights, digits = 3), "\n")
+  invisible(x)
+}
+
+
+#' Summarize a Gaussian mixture model
+#'
+#' Lays out one row per mixture component with its weight, mean, and marginal
+#' standard deviations.
+#'
+#' @details
+#' `components` has one row per component: the weight \eqn{w_k}, the entries of
+#' \eqn{\mu_k}, and \eqn{\sqrt{\mathrm{diag}(\Sigma_k)}}. Off-diagonal
+#' covariance entries are not shown; read them from `object$sigma` when the
+#' components are correlated.
+#'
+#' @param object A `"gmm"` object.
+#' @param x A `"summary.gmm"` object.
+#' @param ... Ignored.
+#'
+#' @return
+#' `summary()` returns an object of class `"summary.gmm"` with components
+#' `nComp`, `d`, and `components`. `print()` renders it and
+#' returns `x` invisibly.
+#' @seealso [gmm()]
+#' @examples
+#' model <- gmm(nComp = 2, mu = cbind(c(-2, 0), c(2, 0)),
+#'              sigma = array(diag(2), c(2, 2, 2)), weights = c(0.3, 0.7),
+#'              d = 2)
+#' summary(model)
+#' @export
+summary.gmm <- function(object, ...) {
+  d <- object$d
+  k <- object$nComp
+  # `vapply()` drops to a vector when d == 1, so restore the d x k shape.
+  sds <- matrix(
+    vapply(
+      seq_len(k),
+      function(i) sqrt(diag(matrix(object$sigma[, , i], d, d))),
+      numeric(d)
+    ),
+    nrow = d, ncol = k
+  )
+  components <- cbind(weight = object$weights, t(object$mu), t(sds))
+  colnames(components) <- c(
+    "weight", paste0("mean_x", seq_len(d)), paste0("sd_x", seq_len(d))
+  )
+  rownames(components) <- paste0("comp", seq_len(k))
+
+  structure(
+    list(
+      nComp = k,
+      d = d,
+      components = components
+    ),
+    class = "summary.gmm"
+  )
+}
+
+#' @rdname summary.gmm
+#' @export
+print.summary.gmm <- function(x, ...) {
+  cat(sprintf("Gaussian mixture  K=%d  d=%d\n\n", x$nComp, x$d))
+  print(signif(x$components, 4))
   invisible(x)
 }
 
@@ -166,10 +227,8 @@ print.gmm <- function(x, ...) {
 #' @examples
 #' model <- gmm()
 #' X <- rgmm(model)
-rgmm <- function(model = NULL, n = 100) {
-  if (is.null(model)) {
-    stop("Supply GMM Model", call. = FALSE)
-  }
+rgmm <- function(model, n = 100) {
+  .check_gmm(model)
   n <- validate_integer(n, "n")
   k <- model$nComp
   mu <- model$mu
@@ -181,12 +240,12 @@ rgmm <- function(model = NULL, n = 100) {
 
   # One-dimensional mixtures can be sampled directly with `rnorm()`.
   if (d == 1) {
-    stdev <- vapply(
-      seq_len(k), function(i) sqrt(sigma[, , i]), numeric(1L)
+    stdev <- sqrt(sigma[1L, 1L, ])
+    samples <- stats::rnorm(
+      n = n, mean = mu[components], sd = stdev[components]
     )
-    data <- stats::rnorm(n = n, mean = mu[components], sd = stdev[components])
   } else {
-    # Multivariate mixtures require one Gaussian draw per sampled component.
+    # Draw all observations assigned to each component in one batch.
     if (!requireNamespace("mvtnorm", quietly = TRUE)) {
       stop(
         "mvtnorm is required for multivariate Gaussian mixture sampling.",
@@ -194,18 +253,18 @@ rgmm <- function(model = NULL, n = 100) {
       )
     }
     # Preserve the order of the sampled component labels.
-    data <- matrix(0, nrow = n, ncol = d)
+    samples <- matrix(0, nrow = n, ncol = d)
     for (i in seq_len(k)) {
       idx <- which(components == i)
       if (length(idx) > 0L) {
-        data[idx, ] <- mvtnorm::rmvnorm(
+        samples[idx, ] <- mvtnorm::rmvnorm(
           length(idx), mean = mu[, i], sigma = sigma[, , i]
         )
       }
     }
   }
 
-  data
+  samples
 }
 
 #' Evaluate a Gaussian mixture density
@@ -223,8 +282,7 @@ rgmm <- function(model = NULL, n = 100) {
 #'   length-`d` vector represents one observation. Matrix rows are observations.
 #'
 #' @return
-#' A numeric vector containing one ordinary density value per interpreted
-#' observation in `X`.
+#' One density value per observation in `X`.
 #'
 #' @export
 #'
@@ -232,11 +290,11 @@ rgmm <- function(model = NULL, n = 100) {
 #' model <- gmm()
 #' X <- rgmm(model)
 #' p <- densitygmm(model = model, X = X)
-densitygmm <- function(model = NULL, X = NULL) {
-  if (is.null(model) || is.null(X)) {
-    stop("supply `model` and `X`", call. = FALSE)
-  }
-  exp(.row_logsumexp(.gmm_log_joint_densities(model, X)))
+densitygmm <- function(model, X) {
+  .check_gmm(model)
+  # Sum component densities in log space to avoid underflow.
+  x_mat <- .as_gmm_sample_matrix(model, X)
+  exp(.row_logsumexp(.gmm_log_joint_densities(model, x_mat)))
 }
 
 #' Create a score function for a fixed Gaussian mixture model
@@ -268,6 +326,8 @@ densitygmm <- function(model = NULL, X = NULL) {
 #' X <- rgmm(model)
 #' G <- grad_log_prob(X)
 get_score_evaluator <- function(model) {
+  .check_gmm(model)
+  # Covariance inverses are fixed, so compute them once per evaluator.
   precision_cache <- .build_precision_cache(model)
 
   function(X) {
@@ -282,7 +342,7 @@ get_score_evaluator <- function(model) {
 }
 
 
-# ---- Internal: shared coercion and numerics ------------------------------
+# Internal shared coercion and numerics
 
 # Stable row-wise log-sum-exp used by Gaussian-mixture density calculations.
 .row_logsumexp <- function(log_mat) {
@@ -294,20 +354,18 @@ get_score_evaluator <- function(model) {
   out <- row_max
   finite <- is.finite(row_max)
   if (any(finite)) {
+    # Shifting by the row maximum keeps exponentials in a safe range.
     shifted <- log_mat[finite, , drop = FALSE] - row_max[finite]
     out[finite] <- row_max[finite] + log(rowSums(exp(shifted)))
   }
   out
 }
 
-.get_component_mean <- function(model, component_idx) {
-  if (model$d == 1) {
-    if (is.null(dim(model$mu))) {
-      return(as.numeric(model$mu[component_idx]))
-    }
-    return(as.numeric(model$mu[1, component_idx]))
+.check_gmm <- function(model) {
+  if (!inherits(model, "gmm")) {
+    stop("`model` must be a Gaussian mixture returned by `gmm()`", call. = FALSE)
   }
-  as.numeric(model$mu[, component_idx])
+  invisible(model)
 }
 
 .as_gmm_sample_matrix <- function(model, X) {
@@ -324,18 +382,16 @@ get_score_evaluator <- function(model) {
 }
 
 
-# ---- Internal: mixture densities and responsibilities --------------------
+# Internal mixture densities and responsibilities
 
-.gmm_log_component_densities <- function(model, X) {
+# `x_mat` must already be an n x d matrix from `.as_gmm_sample_matrix()`.
+.gmm_log_component_densities <- function(model, x_mat) {
   d <- model$d
   k <- model$nComp
   mu <- model$mu
   sigma <- model$sigma
 
-  x_mat <- .as_gmm_sample_matrix(model, X)
-  n <- nrow(x_mat)
-
-  log_comp <- matrix(NA_real_, nrow = n, ncol = k)
+  log_comp <- matrix(NA_real_, nrow = nrow(x_mat), ncol = k)
 
   if (d == 1) {
     x_vec <- as.numeric(x_mat[, 1])
@@ -356,54 +412,38 @@ get_score_evaluator <- function(model) {
   log_comp
 }
 
-.gmm_log_joint_densities <- function(model, X) {
+.gmm_log_joint_densities <- function(model, x_mat) {
+  # log(w_k) + log(phi_k) gives each weighted component density.
   sweep(
-    .gmm_log_component_densities(model, X),
+    .gmm_log_component_densities(model, x_mat),
     2L,
     log(as.numeric(model$weights)),
     "+"
   )
 }
 
-.gmm_responsibilities <- function(model, X) {
-  log_joint <- .gmm_log_joint_densities(model, X)
+.gmm_responsibilities <- function(model, x_mat) {
+  log_joint <- .gmm_log_joint_densities(model, x_mat)
   row_max <- apply(log_joint, 1L, max, na.rm = TRUE)
   invalid <- is.infinite(row_max) & row_max < 0
   if (any(invalid)) {
     stop("all component log densities are -Inf for at least one sample row", call. = FALSE)
   }
+  # Normalize after shifting to obtain stable posterior weights.
   shifted <- log_joint - row_max
   exp(shifted) / rowSums(exp(shifted))
 }
 
 
-# ---- Internal: score and precision cache ---------------------------------
+# Internal score and precision cache
 
-# Return a Cholesky-based precision matrix after positive-definiteness checks.
-.safe_precision_matrix <- function(sigma) {
-  if (is.null(dim(sigma))) {
-    val <- as.numeric(sigma)
-    if (length(val) != 1L || !is.finite(val) || val <= 0) {
-      stop("variance must be a positive finite scalar", call. = FALSE)
-    }
-    return(matrix(1 / val, nrow = 1, ncol = 1))
-  }
-
-  sigma <- as.matrix(sigma)
-  d <- nrow(sigma)
-  if (ncol(sigma) != d) {
-    stop("Covariance matrix must be square", call. = FALSE)
-  }
-
-  sigma <- (sigma + t(sigma)) / 2
-  chol_sigma <- tryCatch(chol(sigma), error = function(e) NULL)
-  if (is.null(chol_sigma)) stop("covariance matrix must be positive definite", call. = FALSE)
-  chol2inv(chol_sigma)
-}
-
+# `gmm()` already symmetrized and Cholesky-checked every component covariance.
 .build_precision_cache <- function(model) {
+  d <- model$d
   lapply(seq_len(model$nComp), function(component_idx) {
-    .safe_precision_matrix(model$sigma[, , component_idx])
+    sigma_k <- matrix(model$sigma[, , component_idx], d, d)
+    # A scalar variance inverts exactly; `chol2inv()` would round twice.
+    if (d == 1L) matrix(1 / sigma_k[1L], 1L, 1L) else chol2inv(chol(sigma_k))
   })
 }
 
@@ -413,9 +453,9 @@ get_score_evaluator <- function(model) {
   score <- matrix(0, nrow = nrow(x_mat), ncol = model$d)
 
   for (component_idx in seq_len(model$nComp)) {
-    mean_k <- .get_component_mean(model, component_idx)
-    centered <- sweep(x_mat, 2L, mean_k, "-")
+    centered <- sweep(x_mat, 2L, model$mu[, component_idx], "-")
     component_score <- -centered %*% precision_cache[[component_idx]]
+    # The mixture score is the responsibility-weighted component score.
     score <- score + component_score * responsibilities[, component_idx]
   }
 

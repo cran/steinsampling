@@ -7,9 +7,10 @@
 rwm(log_p, x0, h, Sigma = NULL, m_iter)
 }
 \arguments{
-\item{log_p}{Function returning log density values.}
+\item{log_p}{Function taking an \verb{n x d} matrix and returning \code{n} log-density
+values.}
 
-\item{x0}{Initial state vector.}
+\item{x0}{Finite initial state vector.}
 
 \item{h}{Positive step-size multiplier. The proposal covariance is
 \code{h * Sigma}.}
@@ -17,33 +18,28 @@ rwm(log_p, x0, h, Sigma = NULL, m_iter)
 \item{Sigma}{Symmetric positive-definite proposal covariance scale. If
 \code{NULL}, the identity matrix is used.}
 
-\item{m_iter}{Number of returned chain rows, including the initial state in
-row 1. The function therefore makes \code{m_iter - 1} Markov transitions.}
+\item{m_iter}{Number of returned chain rows, including \code{x0} in row 1.}
 }
 \value{
-A list with the same fields as \code{\link[=mala]{mala()}}: \code{X} (chain states), \code{D} (explicitly
-\code{NULL} because RWM does not evaluate scores), \code{log_p} (log density values),
-\code{accept} (0/1 acceptance indicators), \code{n_eval}, and \code{counts}. The explicit
-\code{D = NULL} tells \code{\link[=sp_mcmc]{sp_mcmc()}} to score the distinct candidate states after
-the path is generated.
+A list with:
+\itemize{
+\item \code{X}: chain states.
+\item \code{log_p}: log-density values at those states.
+\item \code{accept}: 0/1 indicators, with 0 in row 1.
+\item \code{D = NULL}, because RWM computes no scores.
+\item \code{counts}: row counts with \code{counts$score = 0}; \code{n_eval = counts$total = counts$log_p}.
+}
 }
 \description{
-Runs the random-walk Metropolis kernel used as the other built-in SP-MCMC
-candidate-chain transition.
+Runs the Gaussian random-walk Metropolis transition used by SP-MCMC.
 }
 \details{
 From the current state \code{x}, the proposal is
 \deqn{y = x + z, \quad z \sim N(0, h Sigma).}
-The move is accepted with probability \code{min(1, exp(log_p(y) - log_p(x)))}.
-Unlike MALA, this transition does not use the score to propose moves, so any
-candidate scores needed by SP-MCMC are computed later by
-\code{\link[=sp_mcmc_eval_candidates]{sp_mcmc_eval_candidates()}}.
-
-The first row of the returned chain is \code{x0}. Subsequent rows are accepted
-proposals or repeats of the previous state after rejection. The acceptance
-indicators therefore describe whether each transition moved, not whether a
-row is unique. \code{\link[=sp_mcmc]{sp_mcmc()}} removes duplicate candidate states later before
-scoring the path with the Stein Points objective.
+The function evaluates \code{log_p(y)} and accepts with probability
+\code{min(1, exp(log_p(y) - log_p(x)))}; \code{-Inf} is rejected. Row 1 of the output
+is \code{x0}; \code{m_iter - 1} proposals follow. RWM does not evaluate the score.
+\code{\link[=sp_mcmc_eval_candidates]{sp_mcmc_eval_candidates()}} computes candidate scores later.
 }
 \examples{
 log_p <- function(X) -0.5 * rowSums(as.matrix(X)^2)

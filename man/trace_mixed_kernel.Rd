@@ -24,3 +24,7 @@ Numeric \eqn{n_X\times n_Y} matrix
 \description{
 Mixed-derivative trace of a base kernel
 }
+\examples{
+trace_mixed_kernel(stein_kernel("gaussian_rbf", h = 1),
+                   matrix(c(-1, 0, 1), ncol = 1))
+}

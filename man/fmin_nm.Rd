@@ -16,24 +16,26 @@ fmin_nm(
 )
 }
 \arguments{
-\item{lb, ub}{Lower and upper bounds for candidate points.}
+\item{lb, ub}{Finite lower and upper bound vectors of equal length, with
+\code{ub > lb} componentwise.}
 
-\item{n_res}{Number of random restarts.}
+\item{n_res}{Positive integer number of random restarts.}
 
-\item{mu0, Sigma0}{Initial Gaussian proposal mean and covariance.}
+\item{mu0, Sigma0}{Initial Gaussian proposal mean and covariance. \code{mu0} must
+be a finite length-\code{d} vector and \code{Sigma0} a finite symmetric
+positive-definite \verb{d x d} matrix.}
 
-\item{sigsq}{Local proposal variance after the delay period.}
+\item{sigsq}{Finite positive local proposal variance after the delay period.}
 
-\item{delay}{Number of optimization iterations before using local proposals.}
+\item{delay}{Nonnegative integer number of optimization iterations before
+using local proposals.}
 
-\item{control}{Control list passed to \code{stats::optim()}.}
+\item{control}{List passed to \code{stats::optim()}.}
 }
 \value{
-An optimizer function with signature \verb{function(objective, X_curr, t)}. The
-returned function runs \code{stats::optim()} from \code{n_res} starting points and
-returns \code{x_min} (the selected point), \code{d_min} (its score), \code{f_min} (the
-Stein objective value that updates the running KSD diagnostic), and
-\code{n_eval} (objective evaluations charged to this search).
+An optimizer function with signature \verb{function(objective, X_curr, t)} that
+returns \code{x_min} (the selected point), \code{d_min} (its score), \code{f_min} (its
+objective value), and \code{n_eval} (objective evaluations charged to the search).
 }
 \description{
 Creates a local search function for \code{\link[=stein_points]{stein_points()}}. It draws several
@@ -41,16 +43,11 @@ starting points in the box, runs Nelder-Mead from each one, and returns the
 best local solution found.
 }
 \details{
-The Stein Points paper uses numerical optimization because the exact global
-search is usually unavailable. This helper performs a practical multi-start
-local search. A sine-squared transformation maps unconstrained Nelder-Mead
-parameters back into \verb{[lb, ub]}, so every objective evaluation stays inside
+The returned optimizer performs a multi-start local search. A sine-squared
+transformation maps unconstrained Nelder-Mead parameters back into
+\verb{[lb, ub]}, so every objective evaluation stays inside
 the requested search box. Each restart begins from the same boxed proposal
 rule used by \code{\link[=fmin_mc]{fmin_mc()}}.
-
-Nelder-Mead is useful when the objective is smooth enough for local
-improvement to beat the finite candidate sets of \code{\link[=fmin_grid]{fmin_grid()}} and
-\code{\link[=fmin_mc]{fmin_mc()}}.
 }
 \examples{
 fmin_nm(lb = -1, ub = 1, n_res = 2)

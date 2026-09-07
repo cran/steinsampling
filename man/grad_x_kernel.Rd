@@ -24,3 +24,10 @@ Numeric \eqn{n_X\times n_Y\times d} array
 \description{
 Differentiate a base kernel in its first argument
 }
+\examples{
+k <- stein_kernel("gaussian_rbf", h = 1)
+X <- matrix(c(-1, 0, 1), ncol = 1)
+G <- grad_x_kernel(k, X)
+dim(G)        # n_X x n_Y x d
+G[, , 1]
+}

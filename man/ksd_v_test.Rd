@@ -31,11 +31,12 @@ sample matrix and returns the \eqn{n\times d} matrix with row
 \item{boot_method}{Calibration method: \code{"rademacher"} for independent
 observations or \code{"markov"} for ordered dependent observations.}
 
-\item{scaling}{Positive squared scale passed to the kernel. For the built-in
-RBF and IMQ kernels this is, respectively, \eqn{h^2} and \eqn{c^2}.
-\code{NULL} uses the squared median pairwise distance.}
+\item{scaling}{Positive squared scale passed to the kernel unless a supplied
+\code{SteinKernel} already has one. For built-in RBF and IMQ kernels this is,
+respectively, \eqn{h^2} and \eqn{c^2}. \code{NULL} uses the squared median
+pairwise distance.}
 
-\item{nboot}{Positive number of bootstrap draws \eqn{B}.}
+\item{nboot}{Positive integer number of bootstrap draws \eqn{B}.}
 
 \item{change_prob}{Sign-change probability \eqn{a_n} for Markov calibration.
 It must be supplied and lie strictly between 0 and 1. It is ignored for
@@ -47,19 +48,21 @@ object.}
 \item{return_raw_boot}{Logical. If \code{TRUE}, include the \eqn{B} bootstrap
 draws in the result.}
 
-\item{block_size}{Positive number of rows per block. \code{NULL} uses
+\item{block_size}{Positive integer number of rows per block. \code{NULL} uses
 \code{min(1024, n)} when \code{n > block_threshold} and \code{n} otherwise. Blocking
 changes memory use, not the test definition.}
 
-\item{block_threshold}{Positive sample-size threshold above which blockwise
-computation is used.}
+\item{block_threshold}{Positive integer sample-size threshold above which
+blockwise computation is used.}
 
 \item{imq_beta}{Finite exponent \eqn{\beta<0} of the built-in IMQ kernel.}
 }
 \value{
 An \code{htest} object. \code{statistic} is \eqn{nV_n}; \code{p.value} is the bootstrap
-p-value above. If \code{return_raw_boot = TRUE}, \code{bootstrap_samples} contains
-\eqn{nV_n^{*(1)},\ldots,nV_n^{*(B)}}.
+p-value above. \code{parameter} records \code{nboot}, \code{scaling}, and \code{change_prob},
+plus \code{imq_beta} for an IMQ kernel; \code{kernel} contains the resolved
+\code{SteinKernel} object. If \code{return_raw_boot = TRUE}, \code{bootstrap_samples}
+contains \eqn{nV_n^{*(1)},\ldots,nV_n^{*(B)}}.
 }
 \description{
 Tests observations against a target distribution specified by its score
@@ -78,18 +81,25 @@ nonnegative but upward biased for the population squared KSD.
 \code{boot_method = "rademacher"} uses independent signs and is intended for
 independent observations. \code{boot_method = "markov"} uses correlated signs
 and requires rows of \code{X} to be in dependence order. The latter calibration
-requires the dependence, moment, and kernel conditions of the wild-bootstrap
-result; this function cannot verify them. Asymptotically, the sign-change
-probabilities \eqn{a_n} must satisfy \eqn{a_n\to0} and
+is valid only under the dependence, moment, and kernel assumptions of
+Chwialkowski et al. (2016); this function does not check them. The sign-change
+probabilities \eqn{a_n} must asymptotically satisfy \eqn{a_n\to0} and
 \eqn{na_n\to\infty}.
 
 If \eqn{nV_n^{*(1)},\ldots,nV_n^{*(B)}} are the bootstrap draws, the
 reported right-tail p-value is
 \deqn{\widehat p=\frac{1+\sum_{b=1}^B
 \mathbf{1}\{nV_n^{*(b)}\ge nV_n\}}{B+1}.}
+
+Warns when off-diagonal Stein-kernel magnitudes are negligible relative to
+the diagonal, because the resulting bootstrap calibration is degenerate.
 }
 \examples{
 X <- matrix(rnorm(20), ncol = 1)
 score_function <- function(x) -as.matrix(x)
 ksd_v_test(X, score_function, nboot = 10)
+}
+\references{
+Chwialkowski, Strathmann, and Gretton (2016), A Kernel Test of
+Goodness of Fit.
 }
