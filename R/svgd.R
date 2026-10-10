@@ -1,5 +1,3 @@
-# SVGD particle updates and adaptive-kernel helpers.
-
 #' Transport particles with Stein variational gradient descent
 #'
 #' Transports an initial set of particles toward a target distribution specified
@@ -39,14 +37,19 @@
 #'
 #' @param x0 Finite numeric vector or matrix containing the initial particles.
 #'   Rows are particles and columns are coordinates; a vector is treated as an
-#'   \eqn{m\times1} matrix.
-#' @param score_function Function that accepts the current \eqn{m\times d}
-#'   particle matrix and returns an \eqn{m\times d} matrix with row
-#'   \eqn{s_p(x_i)^\top}.
+#'   \eqn{m\times 1} matrix.
+#' @param score_function Function taking the current \eqn{m\times d} particle
+#'   matrix and returning the corresponding \eqn{m\times d} matrix of target
+#'   scores.
 #' @param kernel A `SteinKernel` object describing the base kernel. SVGD calls
 #'   [eval_kernel()] and [grad_x_kernel()], not [stein_kernel_matrix()].
+#'   Use [stein_kernel()] for a built-in kernel or [custom_stein_kernel()] to
+#'   supply the kernel calculations.
 #' @param n_iter Nonnegative integer number of particle updates.
-#' @param step_size Positive finite update size \eqn{\epsilon}.
+#' @param step_size Positive finite update size \eqn{\epsilon}. With the
+#'   default rescaling, each coordinate moves by about `step_size` per
+#'   iteration, so `n_iter * step_size` should be at least the distance the
+#'   particles need to travel.
 #' @param alpha Number in \eqn{[0,1)} controlling the running squared-gradient
 #'   average in the default adjustment.
 #' @param adj_grad Optional adjustment function. It receives `grad`,
@@ -66,11 +69,28 @@
 #'   included.
 #' * `kernel`, `n_iter`, and `step_size`: supplied update settings.
 #' * `method` and `call`: method label and matched call.
-#' @references Liu and Wang (2016), Stein Variational Gradient Descent.
+#'
+#' `print(fit)` displays the particle count, dimension, iteration count, step
+#' size, and evaluation count, and returns `fit` invisibly. `summary(fit)`
+#' returns a `"summary.svgd"` object containing the point-set size, kernel,
+#' iteration settings, update-loop score-evaluation total, and call. Printing
+#' that object returns it invisibly.
+#' @references
+#' Liu, Q. and Wang, D. (2016).
+#' Stein Variational Gradient Descent: A General Purpose Bayesian Inference
+#' Algorithm. Advances in Neural Information Processing Systems, 29,
+#' 2378--2386. Curran Associates, Inc.
+#' \url{https://papers.nips.cc/paper_files/paper/2016/hash/b3ba8f1bee1238a2f37603d90b58898d-Abstract.html}.
 #' @examples
-#' x0 <- matrix(seq(-2, 2, length.out = 5), ncol = 1)
-#' target_score <- function(x) -x
-#' svgd(x0, target_score, n_iter = 5, step_size = 0.05)
+#' # Target: N(0, 1).
+#' score <- function(X) -X
+#' x0 <- matrix(seq(-0.5, 0.5, length.out = 50), ncol = 1)
+#' kernel <- stein_kernel("gaussian_rbf", h = 1)
+#' fit <- svgd(x0, score, kernel = kernel, n_iter = 1000, step_size = 0.01)
+#' ksd <- function(X) {
+#'   sqrt(max(0, sum(stein_kernel_matrix(kernel, X, score(X))))) / nrow(X)
+#' }
+#' c(before = ksd(x0), after = ksd(fit$X))
 #' @export
 svgd <- function(x0, score_function,
                  kernel = stein_kernel(type = "gaussian_rbf"),
@@ -79,15 +99,12 @@ svgd <- function(x0, score_function,
   particles <- .as_rows(x0, "x0")
   n_iter <- validate_integer(n_iter, "n_iter", min_value = 0L)
   if (!is.function(score_function)) {
-    stop("score_function must return the target score", call. = FALSE)
+    stop("`score_function` must be a function", call. = FALSE)
   }
   if (!inherits(kernel, "SteinKernel")) {
-    stop("kernel must be a SteinKernel object", call. = FALSE)
+    stop("`kernel` must be a SteinKernel object", call. = FALSE)
   }
-  if (!is.numeric(step_size) || length(step_size) != 1L ||
-      !is.finite(step_size) || step_size <= 0) {
-    stop("step_size must be a positive finite scalar", call. = FALSE)
-  }
+  validate_positive_scalar(step_size, "step_size")
   if (!is.numeric(alpha) || length(alpha) != 1L ||
       !is.finite(alpha) || alpha < 0 || alpha >= 1) {
     stop("alpha must be a finite scalar in [0, 1)", call. = FALSE)
@@ -117,13 +134,15 @@ svgd <- function(x0, score_function,
 
   for (iter in seq_len(n_iter)) {
     scores <- .as_score_matrix(score_function(particles), particles)
-    # Combine kernel-weighted scores with particle repulsion.
+    # Each particle moves along the kernel-weighted average score plus the
+    # repulsion term, as in Liu and Wang 2016.
     kernel_terms <- .compute_svgd_kernel(particles, kernel)
     raw_direction <- (
       kernel_terms$kernel_matrix %*% scores + kernel_terms$repulsion
     ) / nrow(particles)
 
-    # Update the elementwise second moment used for adaptive scaling.
+    # This running mean of squared directions follows the original SVGD code.
+    # The default step divides by its square root.
     if (iter == 1L) {
       historical_grad <- raw_direction^2
     } else {
@@ -162,9 +181,8 @@ svgd <- function(x0, score_function,
     }
   }
 
-  # Recompute scores after the final particle update.
   final_scores <- .as_score_matrix(score_function(particles), particles)
-  # Count only score evaluations used by particle updates.
+  # The final rescoring is not counted, so n_eval covers only the updates.
   n_eval <- rep(nrow(particles), n_iter)
 
   structure(
@@ -181,39 +199,37 @@ svgd <- function(x0, score_function,
 }
 
 
-#' Print an SVGD fit
-#'
-#' @param x An object returned by [svgd()].
-#' @param ... Ignored.
-#' @return `x`, invisibly.
 #' @export
 print.svgd <- function(x, ...) {
   cat(sprintf(
-    "SVGD  n=%d  d=%d  iterations=%d  step=%g\n",
-    nrow(x$X), ncol(x$X), x$n_iter, x$step_size
+    "SVGD  n=%d  d=%d  iterations=%d  step=%g  n_eval=%.0f\n",
+    nrow(x$X), ncol(x$X), x$n_iter, x$step_size, .last_value(x$cum_n_eval)
   ))
   invisible(x)
 }
 
 
-#' Summarize an SVGD fit
-#'
-#' @param object An object returned by [svgd()].
-#' @param ... Ignored.
-#' @return A `"summary.stein_points"` object containing the point-set size,
-#'   kernel, iteration settings, update-loop score-evaluation total, and call.
 #' @export
 summary.svgd <- function(object, ...) {
-  out <- .point_set_summary(object, "score evaluations (update loop)")
+  out <- .point_set_summary(object, "score evaluations (update loop)",
+                            "summary.svgd")
   out$n_iter <- object$n_iter
   out$step_size <- object$step_size
   out
 }
 
+#' @export
+print.summary.svgd <- function(x, ...) {
+  cat(sprintf("SVGD  n=%d  d=%d  kernel=%s\n", x$n, x$d, x$kernel))
+  cat(sprintf("  iterations: %d   step size: %g\n", x$n_iter, x$step_size))
+  cat(sprintf("  %s: %.0f\n", x$evaluation_label, x$n_eval_total))
+  invisible(x)
+}
+
 
 .svgd_median_bandwidth <- function(particles) {
   n <- nrow(particles)
-  # Pairwise bandwidth is undefined for one particle.
+  # One particle has no pairwise distance, so the bandwidth falls back to 1.
   if (n <= 1L) return(1)
 
   med <- stats::median(
@@ -231,17 +247,19 @@ summary.svgd <- function(object, ...) {
 
 .compute_svgd_kernel <- function(particles, kernel) {
   kernel_current <- kernel
-  if (inherits(kernel_current, "SteinKernel_gaussian_rbf") &&
+  if (identical(kernel_current$type, "gaussian_rbf") &&
       is.na(kernel_current$scale2)) {
     # Recompute an unset RBF bandwidth at each iteration.
-    kernel_current$scale2 <- .svgd_median_bandwidth(particles)^2
+    kernel_current <- scale2_kernel(
+      kernel_current, .svgd_median_bandwidth(particles)^2
+    )
   }
 
   n <- nrow(particles)
   kernel_matrix <- eval_kernel(kernel_current, particles)
   grad_array <- grad_x_kernel(kernel_current, particles)
   repulsion <- matrix(0, n, ncol(particles))
-  # Sum grad_xj k(x_j, x_i) over source particles j.
+  # The repulsion on particle i sums the kernel gradient over all particles j.
   for (coordinate in seq_len(ncol(particles))) {
     repulsion[, coordinate] <- colSums(
       matrix(grad_array[, , coordinate], nrow = n, ncol = n)

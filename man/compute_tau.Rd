@@ -11,19 +11,21 @@ compute_tau(X, scores, V, kernel_obj)
 
 \item{scores}{Numeric \eqn{\tilde n\times d} score matrix for \code{X}.}
 
-\item{V}{Numeric \verb{J x d} matrix representing \code{L}, one test location per row.}
+\item{V}{Numeric \eqn{J\times d} matrix representing \code{L}, one test
+location per row.}
 
 \item{kernel_obj}{Stein kernel object. A Gaussian RBF kernel must have a
 fixed positive bandwidth.}
 }
 \value{
-Numeric \eqn{\tilde n \times dJ} matrix. Row \code{i} is \code{tau(x_i)}; columns are
+Numeric \eqn{\tilde n\times dJ} matrix. Row \code{i} is \code{tau(x_i)}; columns are
 ordered by test location and then coordinate.
 }
 \description{
 Builds the row-feature matrix used by \code{\link[=fssd_statistic]{fssd_statistic()}} and
 \code{\link[=fssd_null_pvalue]{fssd_null_pvalue()}}. The rows of \code{V} represent the test locations
 \eqn{L = \{v_1,\ldots,v_J\}}.
+For the complete goodness-of-fit test, see \code{\link[=fssd_test]{fssd_test()}}.
 }
 \details{
 For observation \eqn{x_i}, target score \eqn{s_p(x_i)}, and test location
@@ -47,6 +49,13 @@ scores <- -X
 V <- matrix(0, ncol = 1)
 kernel <- stein_kernel(type = "gaussian_rbf", h = 1)
 compute_tau(X, scores, V, kernel)
+}
+\references{
+Jitkrittum, W., Xu, W., Szabó, Z., Fukumizu, K., and Gretton, A. (2017).
+A Linear-Time Kernel Goodness-of-Fit Test.
+Advances in Neural Information Processing Systems, 30, 262--271.
+Curran Associates, Inc.
+\url{https://papers.nips.cc/paper_files/paper/2017/hash/979d472a84804b9f647bc185a877a8b5-Abstract.html}.
 }
 \seealso{
 \code{\link[=fssd_statistic]{fssd_statistic()}}, \code{\link[=fssd_null_pvalue]{fssd_null_pvalue()}}

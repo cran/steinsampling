@@ -2,6 +2,7 @@
 % Please edit documentation in R/stein_point_mcmc.R
 \name{sp_mcmc}
 \alias{sp_mcmc}
+\alias{sp_mcmc_eval_candidates}
 \title{Select Stein points from short Markov chains}
 \usage{
 sp_mcmc(
@@ -16,17 +17,26 @@ sp_mcmc(
   h,
   Sigma = NULL,
   x_init,
-  seed = NULL,
   transition_fn = NULL,
   proposal_fn = NULL
 )
+
+sp_mcmc_eval_candidates(
+  kernel,
+  score_function,
+  X_curr,
+  D_curr,
+  cand_X,
+  cand_D = NULL
+)
 }
 \arguments{
-\item{score_function}{Function taking an \verb{n x d} matrix and returning the
-corresponding \verb{n x d} matrix of target scores.}
+\item{score_function}{Function taking an \eqn{n\times d} matrix and
+returning the corresponding \eqn{n\times d} matrix of target scores.
+\code{\link[=sp_mcmc_eval_candidates]{sp_mcmc_eval_candidates()}} uses it to score candidate rows.}
 
-\item{log_p}{Function taking an \verb{n x d} matrix and returning \code{n} log-density
-values.}
+\item{log_p}{Function taking an \eqn{n\times d} matrix and returning \code{n}
+log-density values.}
 
 \item{kernel}{A \code{SteinKernel} object. A Gaussian RBF kernel must have a
 fixed positive bandwidth.}
@@ -53,19 +63,53 @@ transitions. If \code{NULL}, the identity matrix is used.}
 
 \item{x_init}{Initial finite numeric vector of length \code{d}.}
 
-\item{seed}{Optional RNG seed.}
-
 \item{transition_fn}{Optional function replacing \code{\link[=rwm]{rwm()}} or \code{\link[=mala]{mala()}}.}
 
 \item{proposal_fn}{Optional per-step update of \code{h} or \code{Sigma}; see Extensions.}
+
+\item{X_curr}{Current selected point matrix.}
+
+\item{D_curr}{Current score matrix.}
+
+\item{cand_X}{Candidate point matrix.}
+
+\item{cand_D}{Optional candidate score matrix.}
 }
 \value{
-An \code{"sp_mcmc"} object containing selected points \code{X}, scores \code{D}, and \code{ksd};
-per-step and cumulative evaluation counts; path-start, distance, acceptance,
-and repeated-point diagnostics; recorded settings; and the matched \code{call}.
-Initial
-diagnostics are \code{NA}. Recorded \code{h} and \code{Sigma} are the original inputs, not
-step-specific replacements.
+An \code{"sp_mcmc"} object with:
+\itemize{
+\item \code{X} and \code{D}: \eqn{n_{\mathrm{points}}\times d} matrices of selected points
+and their scores.
+\item \code{ksd}: running discrepancy after each point.
+\item \code{n_eval}: evaluations at each step; \code{cum_n_eval = cumsum(n_eval)}.
+\item \code{counts}: the \code{log_p}, \code{score}, and \code{candidate_score} counts at each step.
+\item \code{selected_index}: row of \code{X} that each path started from.
+\item \code{accept_rate}: share of accepted proposals in each path.
+\item \code{chain_d2_max}, \code{chain_d2_selected}, \code{chain_d2_last}: squared distances
+from each path's starting state to its farthest state, the state kept, and
+its last state.
+\item \code{n_repeated}: number of selected points that repeat an earlier one.
+\item \code{mcmc}, \code{transition}, \code{criterion}, \code{m_seq}, \code{h}, \code{Sigma}, and \code{kernel}:
+settings used by the run.
+\item \code{method} and \code{call}: method label and matched call.
+}
+
+The first point has no path, so its diagnostic entries are \code{NA}. Recorded
+\code{h} and \code{Sigma} are the original inputs, not step-specific replacements.
+
+\code{\link[=sp_mcmc_eval_candidates]{sp_mcmc_eval_candidates()}} returns a list with:
+\itemize{
+\item \code{objective_values}: one comparison value per candidate row.
+\item \code{scores}: candidate scores, reused from \code{cand_D} when supplied.
+\item \code{k0_diag}: Stein-kernel diagonal for the candidate rows.
+\item \code{score_evaluations}: rows scored here; zero when \code{cand_D} is supplied.
+}
+
+\code{print(fit)} displays the transition method, selection rule, point-set
+size, final KSD, and evaluation count, and returns \code{fit} invisibly.
+\code{summary(fit)} returns a \code{"summary.sp_mcmc"} object with
+\code{transition}, \code{criterion}, \code{m_seq}, \code{h}, \code{accept_rate}, \code{n_repeated}, and
+\code{counts}. Printing that object returns it invisibly.
 }
 \description{
 Builds a point set sequentially. At each step, a short Markov chain supplies
@@ -78,13 +122,23 @@ appends the row minimizing the greedy objective
       +2\sum_{i=1}^{j-1}k_{0,p}(x_i,x),}
 where \eqn{k_{0,p}} is the Stein kernel formed from \code{kernel} and the target
 score. The returned \code{ksd} is the running discrepancy defined in
-\code{\link[=stein_points]{stein_points()}}.
+\code{\link[=stein_points]{stein_points()}}. \code{\link[=sp_mcmc_eval_candidates]{sp_mcmc_eval_candidates()}} evaluates the greedy objective
+for the candidate rows, reusing their scores when available.
 
 \code{criterion} chooses the selected point where each path starts. A path with
 \code{m_seq} states makes \code{m_seq - 1} transitions. Built-in paths use \code{\link[=rwm]{rwm()}} or
 \code{\link[=mala]{mala()}} with proposal covariance \code{h * Sigma}; MALA also uses \code{Sigma} in its
 drift. To use a covariance \code{S} for both the path and kernel distance, set
 \code{Sigma = S} and the kernel's \code{precon = solve(S)}.
+
+\code{summary(fit)} reports \code{accept_rate} weighted by the number of transitions in
+each path;
+paths without acceptance diagnostics are omitted. \code{n_repeated} counts
+selected points that repeat an earlier one; a candidate path contains its own
+starting state, so repeats are expected. The reported \code{h} is the initial
+step size, before any per-step proposal changes. \code{counts} contains the
+\code{log_p}, \code{score}, and \code{candidate_score} column totals; \code{n_eval_total}
+reports their total once.
 }
 \section{Extensions}{
 
@@ -94,25 +148,43 @@ one integer index into \code{state$X}; \code{label} defaults to \code{"custom"}.
 \code{state} contains \code{j}, \code{X}, \code{D}, \code{K0}, recorded diagnostics, and run settings.
 
 A custom \code{transition_fn(log_p, score_function, x0, h, Sigma, m_iter)} returns
-\code{X}, \code{D}, and \code{counts}; \code{X} starts at \code{x0}, \code{D} may be \code{NULL}, and optional
-\code{accept} is a length-\code{m_iter} vector of 0/1 indicators with initial entry 0.
-\code{counts} contains nonnegative integer \code{log_p}, \code{score}, and \code{total} counts,
-with \code{total = log_p + score}.
+\code{X} and \code{counts}; \code{X} starts at \code{x0}, optional \code{D} holds the scores of \code{X},
+and optional \code{accept} is a length-\code{m_iter} vector of 0/1 indicators with
+initial entry 0. \code{counts} contains nonnegative integer \code{log_p} and \code{score}
+counts.
 
 \code{proposal_fn(j, X_curr, h, Sigma, mcmc)} returns a list containing \code{h}
 and/or \code{Sigma}; an empty list keeps both inputs. Changes apply only at step \code{j}.
+
+\code{\link[=sp_mcmc_eval_candidates]{sp_mcmc_eval_candidates()}} returns one greedy-objective value per row of
+\code{cand_X}. Supply \code{cand_D} to reuse candidate scores; otherwise
+\code{score_function} evaluates them.
 }
 
 \examples{
-score <- function(X) -as.matrix(X)
-log_p <- function(X) -0.5 * rowSums(as.matrix(X)^2)
-kernel <- stein_kernel(type = "gaussian_rbf", h = 1)
-sp_mcmc(score, log_p, kernel, n_points = 2, d = 1, m_seq = 2, h = 0.1,
-        x_init = 0)
+# Target: N(0, 1).
+set.seed(1)
+score <- function(X) -X
+log_p <- function(X) -0.5 * rowSums(X^2)
+kernel <- stein_kernel("imq")
+fit <- sp_mcmc(score, log_p, kernel, n_points = 50, d = 1,
+               m_seq = 50, h = 1, x_init = 0)
+summary(fit)
+c(mean = mean(fit$X), second_moment = mean(fit$X^2))  # Targets: 0 and 1
+
+X_curr <- matrix(0, ncol = 1)
+D_curr <- score(X_curr)
+cand_X <- matrix(c(-0.5, 0.5), ncol = 1)
+sp_mcmc_eval_candidates(kernel, score, X_curr, D_curr, cand_X)
 }
 \references{
-Chen et al. (2019), Stein Point Markov Chain Monte Carlo.
+Chen, W. Y., Barp, A., Briol, F.-X., Gorham, J., Girolami, M.,
+Mackey, L., and Oates, C. J. (2019).
+Stein Point Markov Chain Monte Carlo.
+Proceedings of the 36th International Conference on Machine Learning,
+Proceedings of Machine Learning Research, 97, 1011--1021.
+\url{https://proceedings.mlr.press/v97/chen19b.html}.
 }
 \seealso{
-\code{\link[=stein_points]{stein_points()}}, \code{\link[=sp_mcmc_eval_candidates]{sp_mcmc_eval_candidates()}}, \code{\link[=rwm]{rwm()}}, \code{\link[=mala]{mala()}}
+\code{\link[=stein_points]{stein_points()}}, \code{\link[=rwm]{rwm()}}, \code{\link[=mala]{mala()}}
 }

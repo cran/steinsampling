@@ -10,9 +10,9 @@ get_score_evaluator(model)
 \item{model}{Gaussian mixture model returned by \code{\link[=gmm]{gmm()}}.}
 }
 \value{
-A function with signature \verb{function(X)}. For an \verb{n x d} matrix, it returns
-the corresponding \verb{n x d} score matrix. For vector input, it returns a
-vector: multiple one-dimensional scores when \code{model$d == 1}, or one
+A function with signature \verb{function(X)}. For an \eqn{n\times d} matrix, it
+returns the corresponding \eqn{n\times d} score matrix. For vector input, it
+returns a vector: multiple one-dimensional scores when \code{model$d == 1}, or one
 length-\code{d} score when \code{model$d > 1}.
 }
 \description{
@@ -28,8 +28,8 @@ The returned function evaluates
 =\sum_{k=1}^K r_k(x)\Sigma_k^{-1}(\mu_k-x).}
 }
 \examples{
-model <- gmm()
-grad_log_prob <- get_score_evaluator(model)
-X <- rgmm(model)
-G <- grad_log_prob(X)
+model <- gmm(nComp = 1, mu = 0, sigma = 1)
+score <- get_score_evaluator(model)
+X <- matrix(c(-1, 0, 1), ncol = 1)
+all.equal(score(X), -X)
 }

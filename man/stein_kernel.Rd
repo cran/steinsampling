@@ -6,7 +6,6 @@
 \usage{
 stein_kernel(
   type = c("gaussian_rbf", "imq"),
-  sigma = NULL,
   h = NULL,
   beta = -0.5,
   c = 1,
@@ -16,8 +15,8 @@ stein_kernel(
 \arguments{
 \item{type}{\code{"gaussian_rbf"} or \code{"imq"}.}
 
-\item{sigma, h}{Gaussian RBF bandwidth \eqn{h>0}. Supply at most one. If both
-are \code{NULL}, the kernel has no fixed bandwidth.}
+\item{h}{Gaussian RBF bandwidth \eqn{h>0}. If \code{NULL}, the kernel has no fixed
+bandwidth.}
 
 \item{beta}{Finite IMQ exponent \eqn{\beta<0}.}
 
@@ -26,18 +25,27 @@ are \code{NULL}, the kernel has no fixed bandwidth.}
 \item{precon}{Optional symmetric positive-definite \eqn{M}.}
 }
 \value{
-A \code{SteinKernel} object.
+\code{stein_kernel()} returns a \code{SteinKernel} object. \code{print()} displays
+the kernel type, parameters, and the dimensions of the preconditioning
+matrix, when present, and returns its argument invisibly.
 }
 \description{
-Create a built-in Stein kernel
+Creates a Gaussian RBF or IMQ kernel with the chosen parameters.
 }
 \details{
 With \eqn{r_M(x,y)=(x-y)^\top M(x-y)} and \code{M = precon} (identity when
 \code{precon = NULL}), the base kernels are
 \deqn{k_{\mathrm{RBF}}(x,y)=\exp\{-r_M(x,y)/(2h^2)\},\qquad
       k_{\mathrm{IMQ}}(x,y)=\{c^2+r_M(x,y)\}^{\beta}.}
+\code{\link[=scale2_kernel]{scale2_kernel()}} reads or replaces the squared scale \eqn{h^2} or \eqn{c^2}.
+For a different kernel formula, \code{\link[=custom_stein_kernel]{custom_stein_kernel()}} accepts user-supplied
+calculations.
+
+Two further kernels, \code{\link[=stein_kernel_inverse_log]{stein_kernel_inverse_log()}} and
+\code{\link[=stein_kernel_imq_score]{stein_kernel_imq_score()}}, are provided for \code{\link[=stein_points]{stein_points()}} and \code{\link[=sp_mcmc]{sp_mcmc()}}.
 }
 \examples{
-stein_kernel("gaussian_rbf", h = 2)
+kernel <- stein_kernel("gaussian_rbf", h = 2)
+print(kernel)
 stein_kernel("imq", c = 2, beta = -0.25)
 }

@@ -1,5 +1,3 @@
-# KSD-U test, statistic, and centered-multinomial bootstrap.
-
 #' KSD-U goodness-of-fit test for independent observations
 #'
 #' Tests whether independent observations come from a target distribution
@@ -9,10 +7,12 @@
 #' Let \eqn{s_p(x)=\nabla_x\log p(x)} and
 #' \deqn{K_{ij}=k_{0,p}(X_i,X_j),}
 #' where \eqn{k_{0,p}} is the Stein kernel defined in
-#' [stein_kernel_matrix()]. The test uses
+#' [stein_kernel_matrix()]. To construct this matrix separately from the
+#' observations, score function, and kernel, use [ksd_uq_matrix()]. The test uses
 #' \deqn{U_n=\frac{1}{n(n-1)}\sum_{i\ne j}K_{ij},\qquad T_n=nU_n.}
 #' The diagonal is excluded. Thus \eqn{U_n} is unbiased for the population
-#' squared KSD, but its finite-sample value can be negative.
+#' squared KSD, but its finite-sample value can be negative. The scaled statistic
+#' \eqn{T_n} can be computed separately with [ksd_u_statistic()].
 #'
 #' Null calibration uses the centered multinomial bootstrap implemented by
 #' [ksd_u_bootstrap()]. If \eqn{T_n^{*(1)},\ldots,T_n^{*(B)}} are the bootstrap
@@ -26,15 +26,19 @@
 #' @param X Numeric vector or matrix containing \eqn{n} observations. Rows are
 #'   observations and columns are coordinates; a vector is treated as an
 #'   \eqn{n\times 1} matrix.
-#' @param score_function Function that accepts the checked \eqn{n\times d}
-#'   sample matrix and returns the \eqn{n\times d} matrix with row
-#'   \eqn{s_p(X_i)^\top}.
+#' @param score_function Function taking an \eqn{n\times d} matrix and
+#'   returning the corresponding \eqn{n\times d} matrix of target scores.
 #' @param boot_method Bootstrap method. Currently only
 #'   `"multinomial_centered"` is supported.
 #' @param scaling Positive squared scale passed to the kernel unless a supplied
 #'   `SteinKernel` already has one. For built-in RBF and IMQ kernels this is,
-#'   respectively, \eqn{h^2} and \eqn{c^2}. `NULL` uses the squared median
-#'   pairwise distance.
+#'   respectively, \eqn{h^2} and \eqn{c^2}.
+#'   For `kernel = "gaussian_rbf"` or `"imq"`, `NULL` uses the square of the
+#'   median Euclidean distance between rows of `X`; see [find_median_distance()].
+#'   For a supplied Gaussian RBF object without a fixed bandwidth, `NULL`
+#'   instead uses the square of the median distance
+#'   \eqn{\sqrt{(x-y)^\top M(x-y)}}, where \eqn{M} is `precon`, or the identity
+#'   matrix when `precon = NULL`.
 #' @param nboot Positive integer number of bootstrap draws \eqn{B}.
 #' @param kernel Kernel choice: `"gaussian_rbf"`, `"imq"`, or a `SteinKernel`
 #'   object.
@@ -52,12 +56,19 @@
 #' `imq_beta` for an IMQ kernel; `kernel` contains the resolved `SteinKernel`
 #' object. If `return_raw_boot = TRUE`, `bootstrap_samples` contains
 #' \eqn{T_n^{*(1)},\ldots,T_n^{*(B)}}.
-#' @references Liu, Lee, and Jordan (2016), A Kernelized Stein Discrepancy for
-#' Goodness-of-Fit Tests.
+#' Use `print(fit)` to display the test statistic and p-value.
+#' @references
+#' Liu, Q., Lee, J. D., and Jordan, M. I. (2016).
+#' A Kernelized Stein Discrepancy for Goodness-of-Fit Tests.
+#' Proceedings of the 33rd International Conference on Machine Learning,
+#' Proceedings of Machine Learning Research, 48, 276--284.
+#' \url{https://proceedings.mlr.press/v48/liub16.html}.
 #' @examples
-#' X <- matrix(rnorm(10), ncol = 1)
-#' score_function <- function(x) -as.matrix(x)
-#' ksd_u_test(X, score_function, nboot = 10)
+#' set.seed(1)
+#' X <- matrix(rnorm(200, mean = 0.5), ncol = 1)
+#' score <- function(X) -X  # Target: N(0, 1)
+#' fit <- ksd_u_test(X, score, scaling = 1)
+#' print(fit)
 #' @export
 ksd_u_test <- function(X, score_function,
                        boot_method = "multinomial_centered",
@@ -102,8 +113,8 @@ ksd_u_test <- function(X, score_function,
     data.name = data_name,
     parameter = c(
       nboot = nboot,
-      scaling = if (is.null(prep$scaling)) NA_real_ else prep$scaling,
-      if (prep$kernel_name == "imq" && !is.null(prep$kernel_obj$beta))
+      scaling = prep$scaling,
+      if (prep$kernel_name == "imq")
         c(imq_beta = prep$kernel_obj$beta)
     ),
     kernel = prep$kernel_obj
@@ -116,23 +127,44 @@ ksd_u_test <- function(X, score_function,
 
 #' Build the Stein-kernel matrix for the KSD tests
 #'
+#' Calculates the scores of the supplied observations and returns their
+#' Stein-kernel matrix.
+#'
 #' @rdname ksd_matrix
 #' @details
+#' `ksd_uq_matrix()` and `ksd_vq_matrix()` are the same function under one name
+#' per test: the U- and V-statistics differ in how they use the matrix, not in
+#' how it is built.
+#'
 #' For observations \eqn{X_1,\ldots,X_n}, this function returns the full matrix
 #' \deqn{K_{ij}=k_{0,p}(X_i,X_j).}
-#' The diagonal is included. [ksd_u_statistic()] and [ksd_u_bootstrap()]
+#' [ksd_u_statistic()] and [ksd_u_bootstrap()]
 #' exclude it; [ksd_v_statistic()] and [ksd_v_bootstrap()] retain it.
+#' For the complete tests, see [ksd_u_test()] and [ksd_v_test()].
 #'
 #' @inheritParams ksd_u_test
 #' @param X Numeric vector or matrix containing \eqn{n} observations. Rows are
-#'   observations; a vector is treated as an \eqn{n\times 1} matrix.
-#' @param score_function Function that accepts the checked \eqn{n\times d}
-#'   sample matrix and returns an \eqn{n\times d} score matrix.
+#'   observations and columns are coordinates; a vector is treated as an
+#'   \eqn{n\times 1} matrix.
+#' @param score_function Function taking an \eqn{n\times d} matrix and
+#'   returning the corresponding \eqn{n\times d} matrix of target scores.
 #' @return
 #' Numeric \eqn{n\times n} matrix \eqn{K}, including its diagonal.
+#' @references
+#' Liu, Q., Lee, J. D., and Jordan, M. I. (2016).
+#' A Kernelized Stein Discrepancy for Goodness-of-Fit Tests.
+#' Proceedings of the 33rd International Conference on Machine Learning,
+#' Proceedings of Machine Learning Research, 48, 276--284.
+#' \url{https://proceedings.mlr.press/v48/liub16.html}.
+#'
+#' Chwialkowski, K., Strathmann, H., and Gretton, A. (2016).
+#' A Kernel Test of Goodness of Fit.
+#' Proceedings of the 33rd International Conference on Machine Learning,
+#' Proceedings of Machine Learning Research, 48, 2606--2615.
+#' \url{https://proceedings.mlr.press/v48/chwialkowski16.html}.
 #' @examples
-#' X <- matrix(rnorm(5), ncol = 1)
-#' score_function <- function(x) -as.matrix(x)
+#' X <- matrix(c(-1, 0, 1), ncol = 1)
+#' score_function <- function(X) -X
 #' ksd_uq_matrix(X, score_function)
 #' @export
 ksd_uq_matrix <- function(X, score_function,
@@ -150,21 +182,49 @@ ksd_uq_matrix <- function(X, score_function,
   stein_kernel_matrix(prep$kernel_obj, prep$X, prep$scores)
 }
 
-#' Compute the KSD-U statistic
+#' KSD-U statistic and its bootstrap
 #'
+#' Returns \eqn{nU_n}, calculated from the supplied Stein-kernel matrix with
+#' the diagonal excluded, and the bootstrap statistics used to calculate a
+#' KSD-U p-value.
+#'
+#' @rdname ksd_u_components
 #' @details
-#' For \eqn{K_{ij}=k_{0,p}(X_i,X_j)}, this function returns
+#' For \eqn{K_{ij}=k_{0,p}(X_i,X_j)}, [ksd_u_statistic()] returns
 #' \deqn{T_n=nU_n=\frac{1}{n-1}\sum_{i\ne j}K_{ij}.}
-#' The diagonal is excluded. The result can be negative. This function does
-#' not compute bootstrap draws or a p-value.
+#' The result can be negative.
+#'
+#' For bootstrap draw \eqn{b}, let
+#' \deqn{w_i^{(b)}=\frac{N_i^{(b)}}{n}-\frac{1}{n},\qquad
+#' (N_1^{(b)},\ldots,N_n^{(b)})\sim
+#' \operatorname{Multinomial}\left(n;\frac1n,\ldots,\frac1n\right).}
+#' The draw returned by [ksd_u_bootstrap()] is
+#' \deqn{T_n^{*(b)}=n\sum_{i\ne j}w_i^{(b)}w_j^{(b)}K_{ij}.}
+#' The draws are on the same scale as
+#' [ksd_u_statistic()]. Neither function computes a p-value.
+#' For the complete goodness-of-fit test, see [ksd_u_test()].
 #'
 #' @param K0 Finite numeric \eqn{n\times n} Stein-kernel matrix with
 #'   \eqn{n\ge 2}, such as the output of [ksd_uq_matrix()].
 #' @return
-#' One numeric value, \eqn{T_n=nU_n}.
+#' [ksd_u_statistic()] returns one numeric value, \eqn{T_n=nU_n}.
+#' [ksd_u_bootstrap()] returns a numeric vector containing
+#' \eqn{T_n^{*(1)},\ldots,T_n^{*(B)}}.
+#' @references
+#' Liu, Q., Lee, J. D., and Jordan, M. I. (2016).
+#' A Kernelized Stein Discrepancy for Goodness-of-Fit Tests.
+#' Proceedings of the 33rd International Conference on Machine Learning,
+#' Proceedings of Machine Learning Research, 48, 276--284.
+#' \url{https://proceedings.mlr.press/v48/liub16.html}.
 #' @examples
-#' U <- matrix(c(1, 0.2, 0.3, 0.2, 1, 0.4, 0.3, 0.4, 1), 3, 3)
-#' ksd_u_statistic(U)
+#' # Target: N(0, 1).
+#' set.seed(1)
+#' X <- matrix(rnorm(200, mean = 0.5), ncol = 1)
+#' K0 <- ksd_uq_matrix(X, function(X) -X, scaling = 1)
+#' statistic <- ksd_u_statistic(K0)
+#' draws <- ksd_u_bootstrap(K0)
+#' c(statistic = statistic,
+#'   p.value = (1 + sum(draws >= statistic)) / (length(draws) + 1))
 #' @export
 ksd_u_statistic <- function(K0) {
   K0 <- .validate_stein_matrix(K0)
@@ -173,20 +233,7 @@ ksd_u_statistic <- function(K0) {
   sum(K0) / (n - 1L)
 }
 
-#' Centered multinomial bootstrap for KSD-U
-#'
-#' @details
-#' For bootstrap draw \eqn{b}, let
-#' \deqn{w_i^{(b)}=\frac{N_i^{(b)}}{n}-\frac{1}{n},\qquad
-#' (N_1^{(b)},\ldots,N_n^{(b)})\sim
-#' \operatorname{Multinomial}\left(n;\frac1n,\ldots,\frac1n\right).}
-#' The returned draw is
-#' \deqn{T_n^{*(b)}=n\sum_{i\ne j}w_i^{(b)}w_j^{(b)}K_{ij}.}
-#' The diagonal is excluded. The draws are on the same scale as
-#' [ksd_u_statistic()]. This function does not compute a p-value.
-#'
-#' @param K0 Finite numeric \eqn{n\times n} Stein-kernel matrix with
-#'   \eqn{n\ge 2}, such as the output of [ksd_uq_matrix()].
+#' @rdname ksd_u_components
 #' @param nboot Positive integer number of bootstrap draws. Ignored when
 #'   `W_mat` is supplied.
 #' @param W_mat Optional finite numeric \eqn{n\times B} multiplier matrix. If
@@ -194,11 +241,6 @@ ksd_u_statistic <- function(K0) {
 #'   not be centered.
 #' @param boot_method Bootstrap method. Currently only
 #'   `"multinomial_centered"` is supported.
-#' @return
-#' Numeric vector containing \eqn{T_n^{*(1)},\ldots,T_n^{*(B)}}.
-#' @examples
-#' U <- matrix(c(1, 0.2, 0.3, 0.2, 1, 0.4, 0.3, 0.4, 1), 3, 3)
-#' ksd_u_bootstrap(U, nboot = 5)
 #' @export
 ksd_u_bootstrap <- function(K0, nboot = 1000, W_mat = NULL,
                             boot_method = "multinomial_centered") {
@@ -213,7 +255,8 @@ ksd_u_bootstrap <- function(K0, nboot = 1000, W_mat = NULL,
     .validate_bootstrap_weights(W_mat, n)
   }
 
-  # Liu, Lee & Jordan (2016), Eq. 16.
+  # This is Equation 16 of Liu, Lee and Jordan 2016, one bootstrap statistic per
+  # column of W_mat.
   n * as.numeric(colSums((K0 %*% W_mat) * W_mat))
 }
 
@@ -232,6 +275,8 @@ ksd_u_bootstrap <- function(K0, nboot = 1000, W_mat = NULL,
   n <- nrow(X)
   K0 <- stein_kernel_matrix(kernel_obj, X, scores)
   diag_max <- max(abs(diag(K0)))
+  # The U statistic and its bootstrap both exclude i equal to j, so the diagonal
+  # is zeroed before either one.
   diag(K0) <- 0
   offdiag_max <- max(abs(K0))
   u_statistic <- sum(K0) / (n * (n - 1L))

@@ -11,15 +11,17 @@ fssd_rand_test(
   n_simulations = 2000,
   kernel = c("gaussian_rbf", "imq"),
   scaling = NULL,
-  seed = NULL,
   imq_beta = -0.5
 )
 }
 \arguments{
-\item{X}{Numeric vector or matrix of samples (\verb{n x d}).}
+\item{X}{Numeric vector or matrix containing \code{n} independent and identically
+distributed observations. Rows are observations and columns are
+coordinates; a vector is treated as an
+\eqn{n\times 1} matrix.}
 
-\item{score_function}{Function returning the target score for each row of
-\code{X}; the output should have shape \verb{n x d}.}
+\item{score_function}{Function taking an \eqn{n\times d} matrix and
+returning the corresponding \eqn{n\times d} matrix of target scores.}
 
 \item{J}{Number of test locations.}
 
@@ -35,14 +37,13 @@ distance is Euclidean. A finite squared scale in a supplied \code{SteinKernel}
 takes precedence; \code{scaling} is ignored when the kernel exposes no squared
 scale.}
 
-\item{seed}{Optional RNG seed for drawing \code{V} and simulating null draws.}
-
 \item{imq_beta}{Finite IMQ exponent \eqn{\beta<0}.}
 }
 \value{
 An object of class \code{htest}. \code{statistic} is
 \eqn{S_n=n\widehat{FSSD}^2}; \code{p.value} is the same-sample plug-in p-value;
-and \code{info} contains the sampled \verb{J x d} matrix \code{V} representing \code{L}.
+and \code{info} contains the sampled \eqn{J\times d} matrix \code{V} representing \code{L}.
+Use \code{print(fit)} to display the test statistic and p-value.
 }
 \description{
 Fits a Gaussian distribution to \code{X}, draws the test locations
@@ -59,10 +60,21 @@ v_j \sim N_d(\bar x,\widehat\Sigma_X),
 The same rows are used for the statistic and null simulation. The locations,
 and any data-derived kernel scale, use the tested rows, so the reported
 p-value is heuristic. See \code{\link[=fssd_null_pvalue]{fssd_null_pvalue()}} for the independence condition.
+For the common interface and choice of variant, see \code{\link[=fssd_test]{fssd_test()}}.
 }
 \examples{
-X <- matrix(rnorm(8), ncol = 1)
-score_function <- function(x) -as.matrix(x)
-fssd_rand_test(X, score_function, J = 1, scaling = 1,
-               n_simulations = 10)
+# Target: N(0, 1).
+set.seed(1)
+X <- matrix(rnorm(200, mean = 0.5), ncol = 1)
+fit <- fssd_rand_test(X, function(X) -X, J = 3, scaling = 1)
+fit$info$V
+# Heuristic p-value
+c(statistic = unname(fit$statistic), p.value = fit$p.value)
+}
+\references{
+Jitkrittum, W., Xu, W., Szabó, Z., Fukumizu, K., and Gretton, A. (2017).
+A Linear-Time Kernel Goodness-of-Fit Test.
+Advances in Neural Information Processing Systems, 30, 262--271.
+Curran Associates, Inc.
+\url{https://papers.nips.cc/paper_files/paper/2017/hash/979d472a84804b9f647bc185a877a8b5-Abstract.html}.
 }

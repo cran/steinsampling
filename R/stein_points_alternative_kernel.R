@@ -1,14 +1,11 @@
-# Alternative Stein kernels introduced for Stein Points.
-
-# Public constructors
-
 #' Create an inverse-log Stein kernel
 #'
-#' Creates the inverse-log base kernel and wraps it as a `SteinKernel` object.
+#' Constructs a kernel from the logarithm of the squared distance between
+#' points.
 #'
 #' @details
 #' The base kernel has the form
-#' \deqn{k(x, y) = (\alpha + \log(1 + ||x - y||^2))^\beta.}
+#' \deqn{k(x, y) = (\alpha + \log(1 + \lVert x - y\rVert^2))^\beta.}
 #' The parameter `alpha` must be positive and `beta` must be negative; the
 #' default \eqn{\beta=-1} gives the plain inverse-log kernel. Compared with a
 #' Gaussian RBF kernel, this kernel decays much more slowly as points move
@@ -20,11 +17,22 @@
 #' @param beta Negative exponent.
 #'
 #' @return A `SteinKernel` object for the inverse-log kernel.
+#' Use `print(kernel)` to display the kernel type and parameters.
+#' @seealso [stein_kernel()] for the other built-in kernel choices.
+#' @references
+#' Chen, W. Y., Mackey, L., Gorham, J., Briol, F.-X., and Oates, C. J. (2018).
+#' Stein Points. Proceedings of the 35th International Conference on Machine
+#' Learning, Proceedings of Machine Learning Research, 80, 844--853.
+#' \url{https://proceedings.mlr.press/v80/chen18f.html}.
 #' @examples
-#' stein_kernel_inverse_log(alpha = 2, beta = -0.5)
+#' kernel <- stein_kernel_inverse_log(alpha = 2, beta = -0.5)
+#' print(kernel)
 #' @export
 stein_kernel_inverse_log <- function(alpha = 1, beta = -1) {
-  .check_inverse_log_alpha_beta(alpha, beta)
+  validate_positive_scalar(alpha, "alpha")
+  if (!is.numeric(beta) || length(beta) != 1L || !is.finite(beta) || beta >= 0) {
+    stop("beta must be a finite negative scalar", call. = FALSE)
+  }
   new_stein_kernel(
     "inverse_log",
     alpha = as.numeric(alpha), beta = as.numeric(beta),
@@ -39,23 +47,41 @@ stein_kernel_inverse_log <- function(alpha = 1, beta = -1) {
 #'
 #' @details
 #' With \eqn{s_p(x)=\nabla_x\log p(x)}, the base kernel is
-#' \deqn{k(x,y)=(\alpha+||s_p(x)-s_p(y)||^2)^\beta.}
-#' Its Stein derivatives require `hess_log_p`, which returns an `n x d x d`
-#' array containing one Hessian of the target log density per row of `X`.
+#' \deqn{k(x,y)=(\alpha+\lVert s_p(x)-s_p(y)\rVert^2)^\beta.}
+#' Its Stein derivatives require `hess_log_p`, which returns an
+#' \eqn{n\times d\times d} array containing one Hessian of the target log
+#' density per row of `X`.
 #' Preconditioning is not supported.
+#'
+#' Use [stein_kernel_matrix()] to evaluate this kernel;\cr
+#' [eval_kernel()],
+#' [grad_x_kernel()], [trace_mixed_kernel()], and [cross_kernel()] are not supported.
 #'
 #' @param alpha Positive offset parameter.
 #' @param beta Exponent in `(-1, 0)`.
-#' @param hess_log_p Function returning an `n x d x d` Hessian array.
+#' @param hess_log_p Function returning an \eqn{n\times d\times d} Hessian
+#'   array.
 #'
 #' @return A `SteinKernel` object for the score-distance IMQ kernel.
+#' Use `print(kernel)` to display the kernel type and parameters.
+#' @seealso [stein_kernel()] for the other built-in kernel choices.
+#' @references
+#' Chen, W. Y., Mackey, L., Gorham, J., Briol, F.-X., and Oates, C. J. (2018).
+#' Stein Points. Proceedings of the 35th International Conference on Machine
+#' Learning, Proceedings of Machine Learning Research, 80, 844--853.
+#' \url{https://proceedings.mlr.press/v80/chen18f.html}.
 #' @examples
 #' hess_log_p <- function(X) array(-1, dim = c(nrow(as.matrix(X)), 1, 1))
-#' stein_kernel_imq_score(alpha = 1.5, beta = -0.25,
-#'                       hess_log_p = hess_log_p)
+#' kernel <- stein_kernel_imq_score(alpha = 1.5, beta = -0.25,
+#'                                  hess_log_p = hess_log_p)
+#' print(kernel)
 #' @export
 stein_kernel_imq_score <- function(alpha = 1, beta = -0.5, hess_log_p) {
-  .check_imq_alpha_beta(alpha, beta)
+  validate_positive_scalar(alpha, "alpha")
+  if (!is.numeric(beta) || length(beta) != 1L || !is.finite(beta) ||
+      beta <= -1 || beta >= 0) {
+    stop("beta must lie in (-1, 0)", call. = FALSE)
+  }
   if (!is.function(hess_log_p)) {
     stop(
       "hess_log_p must be a function returning an n x d x d Hessian array",
@@ -70,41 +96,15 @@ stein_kernel_imq_score <- function(alpha = 1, beta = -0.5, hess_log_p) {
   )
 }
 
-.check_positive_alpha <- function(alpha) {
-  if (!is.numeric(alpha) || length(alpha) != 1L || !is.finite(alpha) ||
-      alpha <= 0) {
-    stop("alpha must be a finite positive scalar.", call. = FALSE)
-  }
-}
-
-.check_imq_alpha_beta <- function(alpha, beta) {
-  .check_positive_alpha(alpha)
-  if (!is.numeric(beta) || length(beta) != 1L || !is.finite(beta) ||
-      beta <= -1 || beta >= 0) {
-    stop("beta must lie in (-1, 0).", call. = FALSE)
-  }
-}
-
-.check_inverse_log_alpha_beta <- function(alpha, beta) {
-  .check_positive_alpha(alpha)
-  if (!is.numeric(beta) || length(beta) != 1L || !is.finite(beta) || beta >= 0) {
-    stop("beta must be a finite negative scalar.", call. = FALSE)
-  }
-}
-
-
-# Inverse-log operations
 
 .inverse_log_eval <- function(k, X, Y, M) {
   (k$alpha + log1p(compute_cross_squared_distance(X, Y)))^k$beta
 }
 
 .inverse_log_grad_x <- function(k, X, Y, M) {
-  d <- ncol(X); r <- compute_cross_squared_distance(X, Y)
-  coef <- 2 * k$beta * (k$alpha + log1p(r))^(k$beta - 1) / (1 + r)
-  arr <- array(0, c(nrow(X), nrow(Y), d))
-  for (j in seq_len(d)) arr[, , j] <- coef * outer(X[, j], Y[, j], "-")
-  arr
+  r <- compute_cross_squared_distance(X, Y)
+  .displacement_array(X, Y, NULL,
+                      2 * k$beta * (k$alpha + log1p(r))^(k$beta - 1) / (1 + r))
 }
 
 .inverse_log_trace_mixed <- function(k, X, Y, M) {
@@ -122,9 +122,6 @@ stein_kernel_imq_score <- function(alpha = 1, beta = -0.5, hess_log_p) {
 }
 
 
-# Score-distance IMQ operations
-
-# Measure distance between score vectors, not points.
 .as_hessian_array <- function(H, n, d) {
   if (!is.numeric(H) || !identical(dim(H), c(n, d, d)) || any(!is.finite(H))) {
     stop("hess_log_p must return a finite numeric n x d x d array", call. = FALSE)

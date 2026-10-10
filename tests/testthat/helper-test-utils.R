@@ -60,7 +60,7 @@ toy_objective_2d <- function(X) {
 # ---- Scale-hook fixtures -------------------------------------------------
 # Both fixtures delegate to Gaussian RBF, providing an exact scale-hook reference.
 
-rbf_at <- function(h2) kernel_scale2(stein_kernel(type = "gaussian_rbf"), h2)
+rbf_at <- function(h2) scale2_kernel(stein_kernel(type = "gaussian_rbf"), h2)
 
 steinkernel_toy <- function(h2 = 1) {
   steinsampling:::new_stein_kernel(
@@ -69,7 +69,7 @@ steinkernel_toy <- function(h2 = 1) {
     grad_x      = function(k, X, Y, M) grad_x_kernel(rbf_at(k$scale2), X, Y),
     trace_mixed = function(k, X, Y, M) trace_mixed_kernel(rbf_at(k$scale2), X, Y),
     fssd_grad   = function(k, X, vj, grads_X, g_block, M)
-      grad_theta_v_kernel(rbf_at(k$scale2), X, vj, grads_X, g_block)
+      fssd_grad_kernel(rbf_at(k$scale2), X, vj, grads_X, g_block)
   )
 }
 
@@ -80,7 +80,7 @@ custom_rbf <- function(scale2 = NULL) {
     grad_x      = function(k, X, Y, M) grad_x_kernel(rbf_at(fixed(k)), X, Y),
     trace_mixed = function(k, X, Y, M) trace_mixed_kernel(rbf_at(fixed(k)), X, Y),
     fssd_grad   = function(k, X, vj, grads_X, g_block, M)
-      grad_theta_v_kernel(rbf_at(fixed(k)), X, vj, grads_X, g_block),
+      fssd_grad_kernel(rbf_at(fixed(k)), X, vj, grads_X, g_block),
     scale2 = scale2
   )
 }

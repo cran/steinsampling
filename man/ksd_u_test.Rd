@@ -22,17 +22,21 @@ ksd_u_test(
 observations and columns are coordinates; a vector is treated as an
 \eqn{n\times 1} matrix.}
 
-\item{score_function}{Function that accepts the checked \eqn{n\times d}
-sample matrix and returns the \eqn{n\times d} matrix with row
-\eqn{s_p(X_i)^\top}.}
+\item{score_function}{Function taking an \eqn{n\times d} matrix and
+returning the corresponding \eqn{n\times d} matrix of target scores.}
 
 \item{boot_method}{Bootstrap method. Currently only
 \code{"multinomial_centered"} is supported.}
 
 \item{scaling}{Positive squared scale passed to the kernel unless a supplied
 \code{SteinKernel} already has one. For built-in RBF and IMQ kernels this is,
-respectively, \eqn{h^2} and \eqn{c^2}. \code{NULL} uses the squared median
-pairwise distance.}
+respectively, \eqn{h^2} and \eqn{c^2}.
+For \code{kernel = "gaussian_rbf"} or \code{"imq"}, \code{NULL} uses the square of the
+median Euclidean distance between rows of \code{X}; see \code{\link[=find_median_distance]{find_median_distance()}}.
+For a supplied Gaussian RBF object without a fixed bandwidth, \code{NULL}
+instead uses the square of the median distance
+\eqn{\sqrt{(x-y)^\top M(x-y)}}, where \eqn{M} is \code{precon}, or the identity
+matrix when \code{precon = NULL}.}
 
 \item{nboot}{Positive integer number of bootstrap draws \eqn{B}.}
 
@@ -57,6 +61,7 @@ bootstrap p-value above. \code{parameter} records \code{nboot} and \code{scaling
 \code{imq_beta} for an IMQ kernel; \code{kernel} contains the resolved \code{SteinKernel}
 object. If \code{return_raw_boot = TRUE}, \code{bootstrap_samples} contains
 \eqn{T_n^{*(1)},\ldots,T_n^{*(B)}}.
+Use \code{print(fit)} to display the test statistic and p-value.
 }
 \description{
 Tests whether independent observations come from a target distribution
@@ -66,10 +71,12 @@ specified by its score function. The target density need not be normalized.
 Let \eqn{s_p(x)=\nabla_x\log p(x)} and
 \deqn{K_{ij}=k_{0,p}(X_i,X_j),}
 where \eqn{k_{0,p}} is the Stein kernel defined in
-\code{\link[=stein_kernel_matrix]{stein_kernel_matrix()}}. The test uses
+\code{\link[=stein_kernel_matrix]{stein_kernel_matrix()}}. To construct this matrix separately from the
+observations, score function, and kernel, use \code{\link[=ksd_uq_matrix]{ksd_uq_matrix()}}. The test uses
 \deqn{U_n=\frac{1}{n(n-1)}\sum_{i\ne j}K_{ij},\qquad T_n=nU_n.}
 The diagonal is excluded. Thus \eqn{U_n} is unbiased for the population
-squared KSD, but its finite-sample value can be negative.
+squared KSD, but its finite-sample value can be negative. The scaled statistic
+\eqn{T_n} can be computed separately with \code{\link[=ksd_u_statistic]{ksd_u_statistic()}}.
 
 Null calibration uses the centered multinomial bootstrap implemented by
 \code{\link[=ksd_u_bootstrap]{ksd_u_bootstrap()}}. If \eqn{T_n^{*(1)},\ldots,T_n^{*(B)}} are the bootstrap
@@ -81,11 +88,16 @@ Warns when off-diagonal Stein-kernel magnitudes are negligible relative to
 the diagonal, because the resulting bootstrap calibration is degenerate.
 }
 \examples{
-X <- matrix(rnorm(10), ncol = 1)
-score_function <- function(x) -as.matrix(x)
-ksd_u_test(X, score_function, nboot = 10)
+set.seed(1)
+X <- matrix(rnorm(200, mean = 0.5), ncol = 1)
+score <- function(X) -X  # Target: N(0, 1)
+fit <- ksd_u_test(X, score, scaling = 1)
+print(fit)
 }
 \references{
-Liu, Lee, and Jordan (2016), A Kernelized Stein Discrepancy for
-Goodness-of-Fit Tests.
+Liu, Q., Lee, J. D., and Jordan, M. I. (2016).
+A Kernelized Stein Discrepancy for Goodness-of-Fit Tests.
+Proceedings of the 33rd International Conference on Machine Learning,
+Proceedings of Machine Learning Research, 48, 276--284.
+\url{https://proceedings.mlr.press/v48/liub16.html}.
 }

@@ -4,46 +4,44 @@
 \name{steinsampling-package}
 \alias{steinsampling}
 \alias{steinsampling-package}
-\title{steinsampling: Stein tests and Stein sampling tools}
+\title{steinsampling: Kernelized Stein Discrepancy for Goodness-of-Fit Tests and Stein Sampling}
 \description{
-Score-based goodness-of-fit tests and Stein sampling tools: KSD and FSSD
-tests, Stein thinning, Stein Points, SP-MCMC, SVGD, and reusable Stein
-kernels.
+Score-based goodness-of-fit tests and Stein sampling tools: kernel Stein
+discrepancy (KSD) and finite set Stein discrepancy (FSSD) tests, Stein
+thinning, Stein Points, Stein Point Markov chain Monte Carlo (SP-MCMC),
+Stein variational gradient descent (SVGD), and reusable Stein kernels.
 }
 \details{
-Many targets are known only through an unnormalized density. Stein methods
-use the target score
-\deqn{s_p(x) = \nabla_x \log p(x)}
-to test whether data match the target and to transport, construct, or select
-representative points. The normalizing constant of \code{p(x)} is not required.
+Many target distributions are specified by a density known up to a
+normalizing constant, making direct probability calculations and exact
+simulation difficult. Two related tasks arise: assessing whether observed
+data agree with the target distribution, and constructing a point set whose
+empirical distribution approximates it. steinsampling addresses both tasks
+using
+\deqn{s_p(x)=\nabla \log p(x),}
+where \eqn{s_p} is the target score.
 
-All public GOF statistic primitives return the scale used for null
-comparison: \verb{n U_n}, \verb{n V_n}, or \verb{n FSSDhat^2}. Their bootstrap or simulated
-null draws use exactly the matching scale. Unscaled U-statistics are internal
-intermediate values.
+For goodness-of-fit testing, the observations are compared with a specified
+target distribution through its score and a kernel. \code{\link[=ksd_u_test]{ksd_u_test()}} provides
+a KSD test for independent observations. \code{\link[=ksd_v_test]{ksd_v_test()}} supports independent
+observations and serially dependent observations under the corresponding
+assumptions. \code{\link[=fssd_test]{fssd_test()}} instead evaluates Stein features at a finite set
+of test locations, with random or optimized locations.
 
-\code{\link[=ksd_u_test]{ksd_u_test()}} tests independent observations with an off-diagonal
-U-statistic. \code{\link[=ksd_v_test]{ksd_v_test()}} includes the diagonal and uses Rademacher or
-Markov signs. \code{\link[=fssd_test]{fssd_test()}} uses finite Stein features at test locations.
-For KSD-U, \code{\link[=ksd_uq_matrix]{ksd_uq_matrix()}} builds the matrix, \code{\link[=ksd_u_statistic]{ksd_u_statistic()}} computes
-the statistic, and \code{\link[=ksd_u_bootstrap]{ksd_u_bootstrap()}} calibrates it. The KSD-V counterparts
-are \code{\link[=ksd_vq_matrix]{ksd_vq_matrix()}}, \code{\link[=ksd_v_statistic]{ksd_v_statistic()}}, and \code{\link[=ksd_v_bootstrap]{ksd_v_bootstrap()}}. For
-FSSD, \code{\link[=compute_tau]{compute_tau()}} constructs the features, \code{\link[=fssd_statistic]{fssd_statistic()}} computes
-the statistic, and \code{\link[=fssd_null_pvalue]{fssd_null_pvalue()}} simulates the null distribution.
+For sampling and compression, the choice depends on how points are to be
+obtained. \code{\link[=svgd]{svgd()}} moves an initial set of particles toward the target
+distribution. \code{\link[=stein_points]{stein_points()}} constructs points by numerical optimization,
+whereas \code{\link[=sp_mcmc]{sp_mcmc()}} constructs points from short Markov chains. When samples
+are already available, \code{\link[=stein_thinning]{stein_thinning()}} selects a representative sequence,
+allowing repeated selections.
 
-\code{\link[=svgd]{svgd()}} transports an initial particle set. \code{\link[=stein_points]{stein_points()}} constructs a
-point set by continuous search with \code{\link[=fmin_grid]{fmin_grid()}}, \code{\link[=fmin_mc]{fmin_mc()}}, or
-\code{\link[=fmin_nm]{fmin_nm()}}. \code{\link[=sp_mcmc]{sp_mcmc()}} constructs points from states visited by short
-Markov chains. \code{\link[=stein_thinning]{stein_thinning()}} selects rows from an existing sample.
+These methods share a score-and-kernel setup. \code{\link[=stein_kernel]{stein_kernel()}} provides the
+built-in kernels and links to custom kernel construction. Gaussian mixture
+targets can be constructed with \code{\link[=gmm]{gmm()}}, whose help page describes density
+evaluation, simulation, and score calculation.
 
-\code{\link[=stein_kernel]{stein_kernel()}} creates Gaussian RBF and IMQ kernels;
-\code{\link[=custom_stein_kernel]{custom_stein_kernel()}} creates one from callbacks. \code{\link[=eval_kernel]{eval_kernel()}},
-\code{\link[=grad_x_kernel]{grad_x_kernel()}}, \code{\link[=trace_mixed_kernel]{trace_mixed_kernel()}}, \code{\link[=cross_kernel]{cross_kernel()}}, and
-\code{\link[=grad_theta_v_kernel]{grad_theta_v_kernel()}} provide the corresponding kernel calculations.
-
-\code{\link[=gmm]{gmm()}} constructs a Gaussian mixture, \code{\link[=rgmm]{rgmm()}} samples it,
-\code{\link[=densitygmm]{densitygmm()}} evaluates its density, and \code{\link[=get_score_evaluator]{get_score_evaluator()}} returns its
-\verb{function(X)} score callback.
+The methods can be used as complete algorithms or assembled from individual
+components.
 }
 \seealso{
 Useful links:

@@ -5,7 +5,7 @@ test_that("built-in Stein kernels match their oracle decomposition", {
   diff <- outer(X1[, 1], X1[, 1], "-")
   base <- exp(-0.5 * diff^2)
 
-  expect_s3_class(rbf, "SteinKernel_gaussian_rbf")
+  expect_identical(class(rbf), "SteinKernel")
   expect_equal(eval_kernel(rbf, X1), base)
   expect_equal(grad_x_kernel(rbf, X1)[, , 1L], -diff * base)
   expect_equal(trace_mixed_kernel(rbf, X1), (1 - diff^2) * base)
@@ -13,7 +13,7 @@ test_that("built-in Stein kernels match their oracle decomposition", {
   expect_equal(stein_kernel_matrix(rbf, X1, S1),
                tcrossprod(S1) * base - diff^2 * base + (1 - diff^2) * base)
 
-  theta_grad <- grad_theta_v_kernel(rbf, X = X1, vj = 0, grads_X = S1,
+  theta_grad <- fssd_grad_kernel(rbf, X = X1, vj = 0, grads_X = S1,
                                     g_block = matrix(1, nrow(X1), ncol(X1)))
   expect_length(theta_grad$grad_vj, 1L)
   expect_finite_numeric(theta_grad$grad_param)
@@ -71,12 +71,12 @@ test_that("custom Stein kernels satisfy the generic contract", {
   X <- small_x(3)
   S <- normal_score(X)
 
-  expect_s3_class(kernel, "SteinKernel_custom")
+  expect_identical(class(kernel), "SteinKernel")
   # Matching the built-in RBF values implies the whole shape contract.
   expect_equal(stein_kernel_matrix(kernel, X, S),
                stein_kernel_matrix(stein_kernel(type = "gaussian_rbf", h = 1),
                                    X, S))
-  expect_length(grad_theta_v_kernel(kernel, X, 0, S, matrix(1, 3, 1))$grad_vj, 1L)
+  expect_length(fssd_grad_kernel(kernel, X, 0, S, matrix(1, 3, 1))$grad_vj, 1L)
 
   # A custom kernel's `grad_param` is ignored, not validated.
   with_param <- custom_stein_kernel(
@@ -86,13 +86,13 @@ test_that("custom Stein kernels satisfy the generic contract", {
     }
   )
   expect_identical(
-    grad_theta_v_kernel(with_param, X, 0, S, matrix(1, 3, 1))$grad_param, 0
+    fssd_grad_kernel(with_param, X, 0, S, matrix(1, 3, 1))$grad_param, 0
   )
 
   expect_error(custom_stein_kernel(fns$eval, NULL, fns$trace_mixed),
                "must be functions")
   expect_error(
-    grad_theta_v_kernel(
+    fssd_grad_kernel(
       custom_stein_kernel(fns$eval, fns$grad_x, fns$trace_mixed),
       X, 0, S, matrix(1, nrow(X), 1)
     ),

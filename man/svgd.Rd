@@ -18,18 +18,23 @@ svgd(
 \arguments{
 \item{x0}{Finite numeric vector or matrix containing the initial particles.
 Rows are particles and columns are coordinates; a vector is treated as an
-\eqn{m\times1} matrix.}
+\eqn{m\times 1} matrix.}
 
-\item{score_function}{Function that accepts the current \eqn{m\times d}
-particle matrix and returns an \eqn{m\times d} matrix with row
-\eqn{s_p(x_i)^\top}.}
+\item{score_function}{Function taking the current \eqn{m\times d} particle
+matrix and returning the corresponding \eqn{m\times d} matrix of target
+scores.}
 
 \item{kernel}{A \code{SteinKernel} object describing the base kernel. SVGD calls
-\code{\link[=eval_kernel]{eval_kernel()}} and \code{\link[=grad_x_kernel]{grad_x_kernel()}}, not \code{\link[=stein_kernel_matrix]{stein_kernel_matrix()}}.}
+\code{\link[=eval_kernel]{eval_kernel()}} and \code{\link[=grad_x_kernel]{grad_x_kernel()}}, not \code{\link[=stein_kernel_matrix]{stein_kernel_matrix()}}.
+Use \code{\link[=stein_kernel]{stein_kernel()}} for a built-in kernel or \code{\link[=custom_stein_kernel]{custom_stein_kernel()}} to
+supply the kernel calculations.}
 
 \item{n_iter}{Nonnegative integer number of particle updates.}
 
-\item{step_size}{Positive finite update size \eqn{\epsilon}.}
+\item{step_size}{Positive finite update size \eqn{\epsilon}. With the
+default rescaling, each coordinate moves by about \code{step_size} per
+iteration, so \code{n_iter * step_size} should be at least the distance the
+particles need to travel.}
 
 \item{alpha}{Number in \eqn{[0,1)} controlling the running squared-gradient
 average in the default adjustment.}
@@ -54,6 +59,12 @@ included.
 \item \code{kernel}, \code{n_iter}, and \code{step_size}: supplied update settings.
 \item \code{method} and \code{call}: method label and matched call.
 }
+
+\code{print(fit)} displays the particle count, dimension, iteration count, step
+size, and evaluation count, and returns \code{fit} invisibly. \code{summary(fit)}
+returns a \code{"summary.svgd"} object containing the point-set size, kernel,
+iteration settings, update-loop score-evaluation total, and call. Printing
+that object returns it invisibly.
 }
 \description{
 Transports an initial set of particles toward a target distribution specified
@@ -92,10 +103,20 @@ stops; supply a fixed positive RBF bandwidth. Fixed-bandwidth RBF and other
 kernels retain their supplied parameters.
 }
 \examples{
-x0 <- matrix(seq(-2, 2, length.out = 5), ncol = 1)
-target_score <- function(x) -x
-svgd(x0, target_score, n_iter = 5, step_size = 0.05)
+# Target: N(0, 1).
+score <- function(X) -X
+x0 <- matrix(seq(-0.5, 0.5, length.out = 50), ncol = 1)
+kernel <- stein_kernel("gaussian_rbf", h = 1)
+fit <- svgd(x0, score, kernel = kernel, n_iter = 1000, step_size = 0.01)
+ksd <- function(X) {
+  sqrt(max(0, sum(stein_kernel_matrix(kernel, X, score(X))))) / nrow(X)
+}
+c(before = ksd(x0), after = ksd(fit$X))
 }
 \references{
-Liu and Wang (2016), Stein Variational Gradient Descent.
+Liu, Q. and Wang, D. (2016).
+Stein Variational Gradient Descent: A General Purpose Bayesian Inference
+Algorithm. Advances in Neural Information Processing Systems, 29,
+2378--2386. Curran Associates, Inc.
+\url{https://papers.nips.cc/paper_files/paper/2016/hash/b3ba8f1bee1238a2f37603d90b58898d-Abstract.html}.
 }

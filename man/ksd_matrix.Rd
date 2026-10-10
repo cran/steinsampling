@@ -23,15 +23,21 @@ ksd_vq_matrix(
 }
 \arguments{
 \item{X}{Numeric vector or matrix containing \eqn{n} observations. Rows are
-observations; a vector is treated as an \eqn{n\times 1} matrix.}
+observations and columns are coordinates; a vector is treated as an
+\eqn{n\times 1} matrix.}
 
-\item{score_function}{Function that accepts the checked \eqn{n\times d}
-sample matrix and returns an \eqn{n\times d} score matrix.}
+\item{score_function}{Function taking an \eqn{n\times d} matrix and
+returning the corresponding \eqn{n\times d} matrix of target scores.}
 
 \item{scaling}{Positive squared scale passed to the kernel unless a supplied
 \code{SteinKernel} already has one. For built-in RBF and IMQ kernels this is,
-respectively, \eqn{h^2} and \eqn{c^2}. \code{NULL} uses the squared median
-pairwise distance.}
+respectively, \eqn{h^2} and \eqn{c^2}.
+For \code{kernel = "gaussian_rbf"} or \code{"imq"}, \code{NULL} uses the square of the
+median Euclidean distance between rows of \code{X}; see \code{\link[=find_median_distance]{find_median_distance()}}.
+For a supplied Gaussian RBF object without a fixed bandwidth, \code{NULL}
+instead uses the square of the median distance
+\eqn{\sqrt{(x-y)^\top M(x-y)}}, where \eqn{M} is \code{precon}, or the identity
+matrix when \code{precon = NULL}.}
 
 \item{kernel}{Kernel choice: \code{"gaussian_rbf"}, \code{"imq"}, or a \code{SteinKernel}
 object.}
@@ -42,16 +48,35 @@ object.}
 Numeric \eqn{n\times n} matrix \eqn{K}, including its diagonal.
 }
 \description{
-Build the Stein-kernel matrix for the KSD tests
+Calculates the scores of the supplied observations and returns their
+Stein-kernel matrix.
 }
 \details{
+\code{ksd_uq_matrix()} and \code{ksd_vq_matrix()} are the same function under one name
+per test: the U- and V-statistics differ in how they use the matrix, not in
+how it is built.
+
 For observations \eqn{X_1,\ldots,X_n}, this function returns the full matrix
 \deqn{K_{ij}=k_{0,p}(X_i,X_j).}
-The diagonal is included. \code{\link[=ksd_u_statistic]{ksd_u_statistic()}} and \code{\link[=ksd_u_bootstrap]{ksd_u_bootstrap()}}
+\code{\link[=ksd_u_statistic]{ksd_u_statistic()}} and \code{\link[=ksd_u_bootstrap]{ksd_u_bootstrap()}}
 exclude it; \code{\link[=ksd_v_statistic]{ksd_v_statistic()}} and \code{\link[=ksd_v_bootstrap]{ksd_v_bootstrap()}} retain it.
+For the complete tests, see \code{\link[=ksd_u_test]{ksd_u_test()}} and \code{\link[=ksd_v_test]{ksd_v_test()}}.
 }
 \examples{
-X <- matrix(rnorm(5), ncol = 1)
-score_function <- function(x) -as.matrix(x)
+X <- matrix(c(-1, 0, 1), ncol = 1)
+score_function <- function(X) -X
 ksd_uq_matrix(X, score_function)
+}
+\references{
+Liu, Q., Lee, J. D., and Jordan, M. I. (2016).
+A Kernelized Stein Discrepancy for Goodness-of-Fit Tests.
+Proceedings of the 33rd International Conference on Machine Learning,
+Proceedings of Machine Learning Research, 48, 276--284.
+\url{https://proceedings.mlr.press/v48/liub16.html}.
+
+Chwialkowski, K., Strathmann, H., and Gretton, A. (2016).
+A Kernel Test of Goodness of Fit.
+Proceedings of the 33rd International Conference on Machine Learning,
+Proceedings of Machine Learning Research, 48, 2606--2615.
+\url{https://proceedings.mlr.press/v48/chwialkowski16.html}.
 }

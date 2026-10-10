@@ -59,8 +59,11 @@ test_that("sp_mcmc accepts custom start rules and scores candidate sets", {
   kernel <- stein_kernel(type = "gaussian_rbf", h = 1)
   farthest <- function(state, w) which.max(rowSums(state$X^2) * w)
   args <- list(normal_score, normal_log_p, kernel, n_points = 5, d = 1,
-               m_seq = 3, h = 0.3, x_init = 0, seed = 11)
-  run <- function(...) do.call(sp_mcmc, c(args, list(...)))
+               m_seq = 3, h = 0.3, x_init = 0)
+  run <- function(...) {
+    set.seed(11)
+    do.call(sp_mcmc, c(args, list(...)))
+  }
 
   # Rule parameters live in the closure; the list preserves its display name.
   w <- 2
@@ -68,7 +71,7 @@ test_that("sp_mcmc accepts custom start rules and scores candidate sets", {
   expect_equal(run(criterion = rule)$criterion, "farthest")
   expect_equal(run(criterion = list(select = function(state) 1L))$selected_index,
                c(NA_integer_, rep(1L, 4L)))
-  expect_error(run(criterion = list(select = function(state) 1.5)), "integer index")
+  expect_error(run(criterion = list(select = function(state) 1.5)), "one-based index")
   expect_error(run(criterion = list(select = function(state) 3)), "one-based index")
 
   cand_X <- matrix(c(-0.5, 0.5), ncol = 1)
@@ -94,9 +97,10 @@ test_that("sp_mcmc returns a stateful chain and validates its controls", {
     normal_score, normal_log_p, kernel, d = 1, h = 0.1, x_init = 0, ...
   )
 
+  set.seed(1)
   run <- sp_mcmc(normal_score, normal_log_p, kernel, n_points = 2, d = 1,
                  mcmc = "rwm", criterion = "last", m_seq = 2, h = 0.1,
-                 x_init = 0, seed = 1)
+                 x_init = 0)
   expect_identical(class(run), "sp_mcmc")
   expect_equal(dim(run$X), c(2L, 1L))
   expect_equal(dim(run$D), c(2L, 1L))
@@ -197,6 +201,7 @@ test_that("sp_mcmc reports the transition it ran and its evaluation totals", {
                "[mala + last]", fixed = TRUE)
 
   # `n_eval` sums the evaluation categories, so the label must say so.
+  expect_identical(class(s), "summary.sp_mcmc")
   expect_identical(s$evaluation_label, "total evaluations")
   expect_match(paste(capture.output(print(s)), collapse = "\n"),
                "repeated points:", fixed = TRUE)

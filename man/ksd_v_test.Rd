@@ -24,17 +24,21 @@ observations and columns are coordinates; a vector is treated as an
 \eqn{n\times 1} matrix. For Markov calibration, rows must follow the
 dependence order.}
 
-\item{score_function}{Function that accepts the checked \eqn{n\times d}
-sample matrix and returns the \eqn{n\times d} matrix with row
-\eqn{s_p(X_i)^\top}.}
+\item{score_function}{Function taking an \eqn{n\times d} matrix and
+returning the corresponding \eqn{n\times d} matrix of target scores.}
 
 \item{boot_method}{Calibration method: \code{"rademacher"} for independent
 observations or \code{"markov"} for ordered dependent observations.}
 
 \item{scaling}{Positive squared scale passed to the kernel unless a supplied
 \code{SteinKernel} already has one. For built-in RBF and IMQ kernels this is,
-respectively, \eqn{h^2} and \eqn{c^2}. \code{NULL} uses the squared median
-pairwise distance.}
+respectively, \eqn{h^2} and \eqn{c^2}.
+For \code{kernel = "gaussian_rbf"} or \code{"imq"}, \code{NULL} uses the square of the
+median Euclidean distance between rows of \code{X}; see \code{\link[=find_median_distance]{find_median_distance()}}.
+For a supplied Gaussian RBF object without a fixed bandwidth, \code{NULL}
+instead uses the square of the median distance
+\eqn{\sqrt{(x-y)^\top M(x-y)}}, where \eqn{M} is \code{precon}, or the identity
+matrix when \code{precon = NULL}.}
 
 \item{nboot}{Positive integer number of bootstrap draws \eqn{B}.}
 
@@ -61,8 +65,11 @@ blockwise computation is used.}
 An \code{htest} object. \code{statistic} is \eqn{nV_n}; \code{p.value} is the bootstrap
 p-value above. \code{parameter} records \code{nboot}, \code{scaling}, and \code{change_prob},
 plus \code{imq_beta} for an IMQ kernel; \code{kernel} contains the resolved
-\code{SteinKernel} object. If \code{return_raw_boot = TRUE}, \code{bootstrap_samples}
-contains \eqn{nV_n^{*(1)},\ldots,nV_n^{*(B)}}.
+\code{SteinKernel} object.
+
+With \code{return_raw_boot = TRUE}, \code{bootstrap_samples} holds
+\eqn{nV_n^{*(1)},\ldots,nV_n^{*(B)}}.
+Use \code{print(fit)} to display the test statistic and p-value.
 }
 \description{
 Tests observations against a target distribution specified by its score
@@ -72,11 +79,14 @@ Markov calibration for ordered dependent observations.
 \details{
 Let \eqn{s_p(x)=\nabla_x\log p(x)} and
 \deqn{K_{ij}=k_{0,p}(X_i,X_j),}
-where \eqn{k_{0,p}} is defined in \code{\link[=stein_kernel_matrix]{stein_kernel_matrix()}}. The test uses
+where \eqn{k_{0,p}} is defined in \code{\link[=stein_kernel_matrix]{stein_kernel_matrix()}}. To construct this
+matrix separately from the observations, score function, and kernel, use
+\code{\link[=ksd_vq_matrix]{ksd_vq_matrix()}}. The test uses
 \deqn{V_n=\frac{1}{n^2}\sum_{i=1}^n\sum_{j=1}^nK_{ij},\qquad
 nV_n=\frac{1}{n}\sum_{i=1}^n\sum_{j=1}^nK_{ij}.}
 The diagonal is retained. For a positive-definite base kernel, \eqn{V_n} is
-nonnegative but upward biased for the population squared KSD.
+nonnegative but upward biased for the population squared KSD. The scaled
+statistic \eqn{nV_n} can be computed separately with \code{\link[=ksd_v_statistic]{ksd_v_statistic()}}.
 
 \code{boot_method = "rademacher"} uses independent signs and is intended for
 independent observations. \code{boot_method = "markov"} uses correlated signs
@@ -86,7 +96,8 @@ Chwialkowski et al. (2016); this function does not check them. The sign-change
 probabilities \eqn{a_n} must asymptotically satisfy \eqn{a_n\to0} and
 \eqn{na_n\to\infty}.
 
-If \eqn{nV_n^{*(1)},\ldots,nV_n^{*(B)}} are the bootstrap draws, the
+\code{\link[=ksd_v_bootstrap]{ksd_v_bootstrap()}} generates bootstrap draws on the same scale as the
+observed statistic. If \eqn{nV_n^{*(1)},\ldots,nV_n^{*(B)}} are these draws, the
 reported right-tail p-value is
 \deqn{\widehat p=\frac{1+\sum_{b=1}^B
 \mathbf{1}\{nV_n^{*(b)}\ge nV_n\}}{B+1}.}
@@ -95,11 +106,16 @@ Warns when off-diagonal Stein-kernel magnitudes are negligible relative to
 the diagonal, because the resulting bootstrap calibration is degenerate.
 }
 \examples{
-X <- matrix(rnorm(20), ncol = 1)
-score_function <- function(x) -as.matrix(x)
-ksd_v_test(X, score_function, nboot = 10)
+set.seed(1)
+X <- matrix(rnorm(200, mean = 0.5), ncol = 1)
+score <- function(X) -X  # Target: N(0, 1)
+fit <- ksd_v_test(X, score, scaling = 1)
+print(fit)
 }
 \references{
-Chwialkowski, Strathmann, and Gretton (2016), A Kernel Test of
-Goodness of Fit.
+Chwialkowski, K., Strathmann, H., and Gretton, A. (2016).
+A Kernel Test of Goodness of Fit.
+Proceedings of the 33rd International Conference on Machine Learning,
+Proceedings of Machine Learning Research, 48, 2606--2615.
+\url{https://proceedings.mlr.press/v48/chwialkowski16.html}.
 }

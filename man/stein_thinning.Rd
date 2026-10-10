@@ -18,23 +18,23 @@ stein_thinning(
 \arguments{
 \item{X}{Finite numeric vector or matrix containing \eqn{n} existing
 samples. Rows are samples and columns are coordinates; a vector is treated
-as an \eqn{n\times1} matrix.}
+as an \eqn{n\times 1} matrix.}
 
 \item{S}{Optional finite numeric \eqn{n\times d} score matrix with row
 \eqn{s_p(z_i)^\top}. Supply \code{S} or \code{score_function}.}
 
 \item{m}{Positive integer number of indices to select.}
 
-\item{score_function}{Optional function that accepts \code{X} and returns an
-\eqn{n\times d} score matrix. When supplied, its result is used instead of
-\code{S}.}
+\item{score_function}{Optional function taking \code{X} and returning the
+corresponding \eqn{n\times d} matrix of target scores. When supplied, its
+result is used instead of \code{S}.}
 
 \item{pre}{Preconditioner: \code{"sclmed"}, \code{"med"}, \code{"smpcov"}, or a
-symmetric positive-definite \verb{d x d} matrix used directly.}
+symmetric positive-definite \eqn{d\times d} matrix used directly.}
 
-\item{kernel}{Either \code{"imq"}, \code{"gaussian_rbf"}, or a \code{SteinKernel} object.
-The default is \code{"imq"}. The two character forms use fixed kernel
-parameters; to set them, pass a \code{\link[=stein_kernel]{stein_kernel()}} object instead. A
+\item{kernel}{\code{"imq"} (default), \code{"gaussian_rbf"}, or a \code{SteinKernel} object.
+Character inputs use fixed kernel parameters. To set these parameters,
+supply an object from \code{\link[=stein_kernel]{stein_kernel()}}. A
 supplied Gaussian RBF object must have a fixed positive bandwidth.}
 
 \item{pre_subsample}{For \code{"med"} and \code{"sclmed"}, either a positive integer
@@ -48,8 +48,9 @@ rows, and \code{"random"} samples rows randomly.}
 }
 \value{
 Integer vector \eqn{(\pi(1),\ldots,\pi(m))} containing one-based row indices
-in selection order. It is not sorted and may contain repeated indices. The
-selected sample is \code{X[idx, , drop = FALSE]}.
+in selection order. It is not sorted and may contain repeated indices.
+Extract the selected values with \code{X[idx]} for a vector, or
+\code{X[idx, , drop = FALSE]} for a matrix.
 }
 \description{
 Selects an ordered sequence of row indices from an existing sample using a
@@ -58,7 +59,8 @@ sample points.
 }
 \details{
 Let rows of \code{X} be \eqn{z_1^\top,\ldots,z_n^\top} and
-\eqn{K_{ab}=k_{0,p}(z_a,z_b)}. Scores may be supplied through \code{S} or
+\eqn{K_{ab}=k_{0,p}(z_a,z_b)}, with \eqn{k_{0,p}} defined in
+\code{\link[=stein_kernel_matrix]{stein_kernel_matrix()}}. Scores may be supplied through \code{S} or
 computed once using \code{score_function}. If the first \eqn{j-1} selected
 indices are \eqn{\pi(1),\ldots,\pi(j-1)}, the next index is
 \deqn{\pi(j)\in\operatorname*{arg\,min}_{i\in\{1,\ldots,n\}}
@@ -83,16 +85,24 @@ nonsingular empirical covariance matrix.
 
 The default base kernel is
 \deqn{k(x,y)=\{1+r_M(x,y)\}^{-1/2}.}
-Using a Gaussian RBF kernel emits a warning; its bandwidth must be fixed and
-positive. For supplied built-in RBF or IMQ objects, \code{pre} replaces a stored
-preconditioner and warns when the matrices differ. Custom callbacks receive
-the thinning preconditioner as \code{M}.
+A Gaussian RBF kernel must have a fixed positive bandwidth. For supplied
+built-in RBF or IMQ objects, \code{pre} replaces a stored preconditioner and
+warns when the matrices differ. Custom callbacks receive
+the thinning preconditioner as \code{M}; see \code{\link[=custom_stein_kernel]{custom_stein_kernel()}} for their
+interface.
 }
 \examples{
-X <- matrix(rnorm(6), ncol = 1)
-S <- -X
-stein_thinning(X, S = S, m = 2, pre_subsample = 3)
+# Target: N(0, 1).
+set.seed(1)
+X <- matrix(rnorm(500), ncol = 1)
+idx <- stein_thinning(X, score_function = function(X) -X, m = 50)
+selected <- X[idx, , drop = FALSE]
+c(mean = mean(selected), second_moment = mean(selected^2))  # Targets: 0 and 1
 }
 \references{
-Riabiz et al. (2022), Optimal Thinning of MCMC Output.
+Riabiz, M., Chen, W. Y., Cockayne, J., Swietach, P., Niederer, S. A.,
+Mackey, L., and Oates, C. J. (2022).
+Optimal Thinning of MCMC Output.
+Journal of the Royal Statistical Society: Series B (Statistical
+Methodology), 84(4), 1059--1081. \doi{10.1111/rssb.12503}.
 }

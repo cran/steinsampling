@@ -92,7 +92,7 @@ test_that("stein_thinning selects valid indices for both `pre` forms", {
 
   # No kernel row is needed after the final selection.
   local_mocked_bindings(
-    .kP_row_vector = function(...) stop("unexpected kernel-row evaluation"),
+    stein_kernel_matrix = function(...) stop("unexpected kernel-row evaluation"),
     .package = "steinsampling"
   )
   expect_length(stein_thinning(X, S = S, m = 1, pre = diag(1)), 1L)
@@ -221,8 +221,9 @@ test_that("each point-set summary names what it counts and keeps its diagnostic"
   shown <- function(o) paste(capture.output(print(o)), collapse = "\n")
 
   # stein_points counts optimizer evaluations, which mix score and log_p rows.
+  set.seed(1)
   pts_fit <- stein_points(normal_score, kernel, n_points = 4, d = 1,
-                          optimizer = grid, log_p = normal_log_p, seed = 1)
+                          optimizer = grid, log_p = normal_log_p)
   pts <- summary(pts_fit)
   expect_identical(pts$evaluation_label, "objective evaluations")
   expect_false(is.null(pts$ksd_last))
@@ -230,8 +231,9 @@ test_that("each point-set summary names what it counts and keeps its diagnostic"
   expect_match(shown(pts_fit), "Stein Points (greedy)", fixed = TRUE)
 
   # Coordinate objectives stay in the raw result; the summary reports updates.
+  set.seed(1)
   cd_fit <- stein_codescent(X0, normal_score, kernel, n_iter = 3,
-                            optimizer = grid, seed = 1)
+                            optimizer = grid)
   cd <- summary(cd_fit)
   expect_identical(cd$evaluation_label, "objective evaluations")
   expect_identical(cd$n_iter, 3L)
@@ -248,9 +250,18 @@ test_that("each point-set summary names what it counts and keeps its diagnostic"
   expect_identical(sv$n_eval_total, 2L * nrow(X0))
   expect_null(sv$ksd_last)
   expect_null(sv$objective_last)
-  # Its print carries the settings that define the run, and nothing else.
+  # Its print carries the settings that define the run plus the evaluation
+  # count, in the same shape as the other point-set print methods.
   expect_match(shown(sv_fit), "SVGD  n=3  d=1  iterations=2  step=0.05")
-  expect_false(grepl("n_eval", shown(sv_fit)))
+  expect_match(shown(sv_fit), "n_eval=6")
+
+  # Each summary carries its own class, so its print method and any downstream
+  # dispatch receive the object they were written for.
+  expect_identical(class(pts), "summary.stein_points")
+  expect_identical(class(cd), "summary.stein_codescent")
+  expect_identical(class(sv), "summary.svgd")
+  expect_match(shown(pts), "objective evaluations")
+  expect_match(shown(sv), "score evaluations (update loop)", fixed = TRUE)
 
   for (s in list(pts, cd, sv)) {
     expect_null(s$coordinates)

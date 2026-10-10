@@ -13,13 +13,15 @@ stein_kernel_inverse_log(alpha = 1, beta = -1)
 }
 \value{
 A \code{SteinKernel} object for the inverse-log kernel.
+Use \code{print(kernel)} to display the kernel type and parameters.
 }
 \description{
-Creates the inverse-log base kernel and wraps it as a \code{SteinKernel} object.
+Constructs a kernel from the logarithm of the squared distance between
+points.
 }
 \details{
 The base kernel has the form
-\deqn{k(x, y) = (\alpha + \log(1 + ||x - y||^2))^\beta.}
+\deqn{k(x, y) = (\alpha + \log(1 + \lVert x - y\rVert^2))^\beta.}
 The parameter \code{alpha} must be positive and \code{beta} must be negative; the
 default \eqn{\beta=-1} gives the plain inverse-log kernel. Compared with a
 Gaussian RBF kernel, this kernel decays much more slowly as points move
@@ -28,5 +30,15 @@ apart and retains interactions between distant points.
 This kernel uses Euclidean distance and does not support preconditioning.
 }
 \examples{
-stein_kernel_inverse_log(alpha = 2, beta = -0.5)
+kernel <- stein_kernel_inverse_log(alpha = 2, beta = -0.5)
+print(kernel)
+}
+\references{
+Chen, W. Y., Mackey, L., Gorham, J., Briol, F.-X., and Oates, C. J. (2018).
+Stein Points. Proceedings of the 35th International Conference on Machine
+Learning, Proceedings of Machine Learning Research, 80, 844--853.
+\url{https://proceedings.mlr.press/v80/chen18f.html}.
+}
+\seealso{
+\code{\link[=stein_kernel]{stein_kernel()}} for the other built-in kernel choices.
 }

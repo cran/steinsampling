@@ -4,7 +4,7 @@
 \alias{stein_kernel_matrix}
 \title{Assemble the pairwise Stein-kernel matrix}
 \usage{
-stein_kernel_matrix(kernel, X, grads, Y = NULL, grads_Y = NULL, ...)
+stein_kernel_matrix(kernel, X, grads, Y = NULL, grads_Y = NULL, precon = NULL)
 }
 \arguments{
 \item{kernel}{A \code{SteinKernel} object.}
@@ -13,18 +13,22 @@ stein_kernel_matrix(kernel, X, grads, Y = NULL, grads_Y = NULL, ...)
 
 \item{grads, grads_Y}{Score matrices matching \code{X} and \code{Y}.}
 
-\item{...}{Optional \code{precon} overriding \code{kernel$precon}.}
+\item{precon}{Optional preconditioner overriding \code{kernel$precon}.}
 }
 \value{
-Numeric \eqn{n_X\times n_Y} matrix \eqn{K_{ij}=k_{0,p}(x_i,y_j)}.
+Numeric \eqn{n_X\times n_Y} matrix \eqn{K}.
 }
 \description{
-Assemble the pairwise Stein-kernel matrix
+Returns the Stein-kernel matrix \eqn{K}, with entries
+\eqn{K_{ij}=k_{0,p}(x_i,y_j)}.
 }
 \details{
 With \eqn{s_p(x)=\nabla_x\log p(x)},
 \deqn{k_{0,p}(x,y)=s_p(x)^\top s_p(y)k(x,y)+s_p(x)^\top\nabla_y k(x,y)
   +s_p(y)^\top\nabla_x k(x,y)+\mathrm{tr}\{\nabla_x\nabla_y^\top k(x,y)\}.}
+\code{\link[=eval_kernel]{eval_kernel()}} supplies the base-kernel values, \code{\link[=cross_kernel]{cross_kernel()}} the two
+score-derivative terms, and \code{\link[=trace_mixed_kernel]{trace_mixed_kernel()}} the mixed-derivative trace.
+For kernel construction, see \code{\link[=stein_kernel]{stein_kernel()}}.
 }
 \examples{
 X <- matrix(c(-1, 0, 1), ncol = 1)

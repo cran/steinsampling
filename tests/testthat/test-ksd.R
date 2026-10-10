@@ -25,7 +25,7 @@ test_that("KSD tests report their primitives on the documented scale", {
     expect_named(res, c("statistic", "p.value", "method", "data.name",
                         "parameter", "kernel", "bootstrap_samples"))
     expect_equal(unname(res$parameter[c("nboot", "scaling")]), c(5, 1))
-    expect_s3_class(res$kernel, "SteinKernel_gaussian_rbf")
+    expect_identical(class(res$kernel), "SteinKernel")
 
     # validate_integer() rounds and as.integer() truncates; the reported count
     # must follow the generated matrix, not the raw argument.
@@ -149,4 +149,37 @@ test_that("KSD reports degenerate matrices and finite-bootstrap p-values", {
   expect_error(ksd_uq_matrix(Z, huge_score, scaling = 1), "only finite values")
   expect_error(ksd_u_test(Z, huge_score, scaling = 1, nboot = 2),
                "only finite values")
+})
+
+test_that("bootstrap weights match the multiplier laws the tests document", {
+  weights <- steinsampling:::.generate_bootstrap_weights
+  n <- 8L
+  nboot <- 200L
+
+  set.seed(4)
+  W <- weights(n, nboot, "multinomial_centered")
+  # Column b is w_i = N_i / n - 1 / n for one
+  # (N_1, ..., N_n) ~ Multinomial(n; 1/n, ..., 1/n) draw, so the counts are
+  # non-negative integers adding to n and the centred weights add to zero.
+  N <- W * n + 1
+  expect_identical(dim(W), c(n, nboot))
+  expect_equal(N, round(N))
+  expect_true(all(N >= 0))
+  expect_equal(colSums(N), rep(n, nboot))
+  expect_equal(colSums(W), rep(0, nboot))
+
+  # Rademacher multipliers are independent signs.
+  set.seed(4)
+  expect_setequal(as.vector(weights(n, nboot, "rademacher")), c(-1, 1))
+
+  # The multinomial draw itself is pinned: the counts a given seed produces
+  # fix every KSD-U bootstrap p-value the package reports, so a change to how
+  # they are generated has to break a test rather than move published numbers.
+  set.seed(99)
+  expect_equal(
+    weights(4L, 3L, "multinomial_centered") * 4 + 1,
+    matrix(c(1, 1, 0, 2,
+             1, 2, 1, 0,
+             0, 3, 0, 1), nrow = 4L)
+  )
 })

@@ -14,13 +14,12 @@ stein_points(
   log_p = NULL,
   x_init = NULL,
   c2 = NULL,
-  truncation = c("none", "upper", "lower", "linear"),
-  seed = NULL
+  truncation = c("none", "upper", "lower", "linear")
 )
 }
 \arguments{
-\item{score_function}{Function taking an \verb{n x d} matrix and returning the
-corresponding \verb{n x d} matrix of target scores.}
+\item{score_function}{Function taking an \eqn{n\times d} matrix and
+returning the corresponding \eqn{n\times d} matrix of target scores.}
 
 \item{kernel}{A \code{SteinKernel} object used to construct \eqn{k_{0,p}}. A
 Gaussian RBF kernel must use a fixed positive bandwidth.}
@@ -30,9 +29,14 @@ Gaussian RBF kernel must use a fixed positive bandwidth.}
 \item{d}{Positive state dimension.}
 
 \item{optimizer}{Function taking \verb{(objective, X_curr, t)} and returning
-\code{x_min} and its score \code{d_min} as length-\code{d} vectors, \code{f_min} as the value
-of the supplied objective at \code{x_min}, and a nonnegative integer \code{n_eval}.
-The returned vectors and objective value must be finite. During
+\code{x_min} and its score \code{d_min} as length-\code{d} vectors and a nonnegative
+integer \code{n_eval}.
+\code{objective(X_new, scores = NULL)} is vectorized over the rows of \code{X_new}
+and returns a list: \code{objective_values} holds one value per candidate row,
+the value to minimize, and \code{scores} holds the scores it used, which supply
+\code{d_min} without scoring the selected point again. \code{X_curr} holds the points
+kept fixed at this step, and \code{t} is the step counter.
+The returned vectors must be finite. During
 initialization from \code{log_p}, only \code{x_min} and \code{n_eval} are used; the
 selected point is scored separately. With truncation,
 the optimizer must select a feasible candidate; the selected point is
@@ -41,23 +45,24 @@ selected point's objective is recomputed before updating the running KSD.}
 
 \item{method}{Point-selection rule: \code{"greedy"} or \code{"herding"}.}
 
-\item{log_p}{Optional log density used to choose the first point.}
+\item{log_p}{Log-density function taking an \eqn{n\times d} matrix and
+returning \eqn{n} values; required when \code{x_init} is \code{NULL}, otherwise
+ignored. The density need not be normalized.}
 
 \item{x_init}{Optional finite numeric vector of length \code{d} giving the first
-point. If supplied, \code{log_p} is not used.}
+point.}
 
 \item{c2}{Finite positive denominator in the truncation radius. Ignored when
 \code{truncation = "none"}.}
 
-\item{truncation}{Candidate filter defined above: \code{"none"}, \code{"upper"},
-\code{"lower"}, or \code{"linear"}.}
-
-\item{seed}{Optional local RNG seed.}
+\item{truncation}{Candidate filter described under Details: \code{"none"},
+\code{"upper"}, \code{"lower"}, or \code{"linear"}.}
 }
 \value{
-An object of class \code{"stein_points"} with:
+\code{stein_points()} returns an object of class \code{"stein_points"} with:
 \itemize{
-\item \code{X} and \code{D}: \verb{n_points x d} matrices of selected points and their scores.
+\item \code{X} and \code{D}: \eqn{n_{\mathrm{points}}\times d} matrices of selected points
+and their scores.
 \item \code{ksd}: running discrepancy defined above.
 \item \code{n_eval}: evaluation count reported by \code{optimizer} at each step; see
 \code{\link[=fmin_grid]{fmin_grid()}}, \code{\link[=fmin_mc]{fmin_mc()}}, and \code{\link[=fmin_nm]{fmin_nm()}} for what each one counts. The
@@ -66,6 +71,14 @@ the selected first point. \code{cum_n_eval = cumsum(n_eval)}.
 \item \code{method}, \code{kernel}, \code{truncation}, and \code{c2}: settings used by the run.
 \item \code{call}: matched function call.
 }
+
+\code{print(fit)} displays the point-set size, final KSD, and evaluation count,
+and returns \code{fit} invisibly. \code{summary(fit)} returns a
+\code{"summary.stein_points"} object with components \code{method}, \code{kernel}, \code{n},
+\code{d}, \code{evaluation_label}, \code{n_eval_total}, \code{call}, \code{ksd_last}, and
+\code{truncation}, plus \code{c2} when truncation is enabled. \code{evaluation_label}
+names what \code{n_eval_total} counts. Printing that object returns it
+invisibly.
 }
 \description{
 Builds a point set sequentially. At each step, \code{optimizer} searches the
@@ -87,6 +100,9 @@ This is the amount added to the kernel sum used by the running KSD. With
 
 The supplied \code{\link[=fmin_grid]{fmin_grid()}}, \code{\link[=fmin_mc]{fmin_mc()}}, and \code{\link[=fmin_nm]{fmin_nm()}} constructors use
 grid, Monte Carlo, and Nelder-Mead search, respectively.
+Supply a custom \code{optimizer} with the interface described under that
+argument to replace this search. To refine a completed point set, use
+\code{\link[=stein_codescent]{stein_codescent()}}.
 
 The returned discrepancy after step \eqn{j} is
 \deqn{\mathrm{KSD}_j
@@ -94,20 +110,31 @@ The returned discrepancy after step \eqn{j} is
 k_{0,p}(x_a,x_b)\right\}^{1/2}.}
 Truncation keeps candidates satisfying
 \deqn{k_{0,p}(x,x) \le R_j^2.}
-Write \eqn{U^2=2\log\{\max(n_points,2)\}/c2} and
-\eqn{L_j^2=2\log(j)/c2}. \code{"upper"} uses \eqn{U^2}, \code{"lower"} uses
+Write \eqn{U^2=2\log\{\max(n_{\mathrm{points}},2)\}/\mathrm{c2}} and
+\eqn{L_j^2=2\log(j)/\mathrm{c2}}. \code{"upper"} uses \eqn{U^2}, \code{"lower"} uses
 \eqn{L_j^2}, and \code{"linear"} uses
-\eqn{L_j^2+(U^2-L_j^2)(j-1)/\max(n_points-1,1)}. Larger \code{c2} gives a smaller
-radius. Truncation starts at step 2; \code{"none"} disables it.
+\eqn{L_j^2+(U^2-L_j^2)(j-1)/\max(n_{\mathrm{points}}-1,1)}, where
+\eqn{n_{\mathrm{points}}} and \eqn{\mathrm{c2}} are the arguments of the
+same name. Larger \code{c2} gives a smaller radius. Truncation starts at step 2;
+\code{"none"} disables it.
 }
 \examples{
-score <- function(X) -as.matrix(X)
-log_p <- function(X) -0.5 * rowSums(as.matrix(X)^2)
-kernel <- stein_kernel(type = "gaussian_rbf", h = 1)
-opt <- fmin_grid(lb = -1, ub = 1, n0 = 3, grow = FALSE)
-stein_points(score, kernel, n_points = 2, d = 1, optimizer = opt, 
-            log_p = log_p)
+# Target: N(0, 1).
+score <- function(X) -X
+kernel <- stein_kernel("imq")
+opt <- fmin_grid(lb = -4, ub = 4, n0 = 401, grow = FALSE)
+fit <- stein_points(score, kernel, n_points = 50, d = 1,
+                    optimizer = opt, x_init = 0)
+print(fit)
+c(mean = mean(fit$X), second_moment = mean(fit$X^2))  # Targets: 0 and 1
 }
 \references{
-Chen et al. (2018), Stein Points.
+Chen, W. Y., Mackey, L., Gorham, J., Briol, F.-X., and Oates, C. J. (2018).
+Stein Points. Proceedings of the 35th International Conference on Machine
+Learning, Proceedings of Machine Learning Research, 80, 844--853.
+\url{https://proceedings.mlr.press/v80/chen18f.html}.
+}
+\seealso{
+\code{\link[=fmin_grid]{fmin_grid()}}, \code{\link[=fmin_mc]{fmin_mc()}}, and \code{\link[=fmin_nm]{fmin_nm()}} for the supplied
+optimizers; \code{\link[=stein_codescent]{stein_codescent()}} to refine a finished point set.
 }

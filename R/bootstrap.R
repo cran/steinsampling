@@ -1,14 +1,8 @@
-# Internal bootstrap support for the KSD tests.
+# Bootstrap weights and the right-tail p-value for the KSD tests. KSD-U uses
+# centered multinomial weights and KSD-V uses Rademacher or Markov signs.
 
-#
-# `ksd_u_test()` and `ksd_u_bootstrap()` use centered multinomial weights.
-# `ksd_v_test()` and `ksd_v_bootstrap()` use independent Rademacher or
-# dependent Markov sign sequences. The test wrappers also use the common
-# right-tail p-value helper below.
-
-# Return the corrected KSD right-tail p-value
-# (1 + sum(T_b >= T_obs)) / (B + 1). FSSD uses a separate uncorrected null
-# simulation and does not call this helper.
+# Count the observed statistic as one more draw, so the p-value is never 0. FSSD
+# simulates its null without this correction and does not use this helper.
 .bootstrap_pvalue_right_tail <- function(boot_stats, stat) {
   boot_stats <- as.numeric(boot_stats)
   stat <- as.numeric(stat)[1L]
@@ -27,8 +21,8 @@
   as.numeric(change_prob)
 }
 
-# Columns are independent bootstrap replicates. For Markov weights, cumprod()
-# turns adjacent flip indicators into a sign sequence starting at one.
+# Each column is one bootstrap replicate. For Markov weights, cumprod turns the
+# flip indicators into a sign sequence that starts at 1.
 .generate_bootstrap_weights <- function(n, nboot, boot_method,
                                         change_prob = NULL) {
   n <- validate_integer(n, "n")
@@ -38,8 +32,15 @@
   }
 
   switch(boot_method,
-    multinomial_centered =
-      stats::rmultinom(nboot, size = n, prob = rep(1 / n, n)) / n - (1 / n),
+    # Draw n cell indices for each column with sample.int and count them. The
+    # counts are multinomial with equal cell probabilities. The offset sends
+    # each block of n draws to its own column.
+    multinomial_centered = {
+      cells <- as.double(n) * nboot
+      draws <- sample.int(n, cells, replace = TRUE) +
+        rep(seq.int(0, by = n, length.out = nboot), each = n)
+      matrix(tabulate(draws, nbins = cells), nrow = n) / n - (1 / n)
+    },
     rademacher =
       matrix(sample(c(-1, 1), n * nboot, replace = TRUE), nrow = n, ncol = nboot),
     markov =
@@ -48,7 +49,6 @@
   )
 }
 
-# Supplied multipliers may come from families other than the built-in methods.
 .validate_bootstrap_weights <- function(W_mat, n) {
   W_mat <- as.matrix(W_mat)
   if (!is.numeric(W_mat) || nrow(W_mat) != n || ncol(W_mat) < 1 ||

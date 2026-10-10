@@ -4,20 +4,20 @@
 \alias{stein_codescent}
 \title{Refine Stein Points by coordinate descent}
 \usage{
-stein_codescent(X0, score_function, kernel, n_iter, optimizer, seed = NULL)
+stein_codescent(X0, score_function, kernel, n_iter, optimizer)
 }
 \arguments{
-\item{X0}{Initial point matrix.}
+\item{X0}{Initial \eqn{n\times d} point matrix; rows are points.}
 
-\item{score_function}{Function returning scores for candidate rows.}
+\item{score_function}{Function taking an \eqn{n\times d} matrix and
+returning the corresponding \eqn{n\times d} matrix of target scores.}
 
 \item{kernel}{A \code{SteinKernel} object.}
 
 \item{n_iter}{Number of coordinate-descent updates.}
 
-\item{optimizer}{Optimizer function used for each coordinate update.}
-
-\item{seed}{Optional RNG seed.}
+\item{optimizer}{Optimizer function used for each coordinate update, such
+as \code{\link[=fmin_grid]{fmin_grid()}}, \code{\link[=fmin_mc]{fmin_mc()}}, or \code{\link[=fmin_nm]{fmin_nm()}}.}
 }
 \value{
 An object of class \code{"stein_codescent"} with:
@@ -36,6 +36,15 @@ counts the \code{nrow(X0)} initial scores.
 
 No running \code{ksd} is returned. Compute the final KSD as
 \code{sqrt(sum(stein_kernel_matrix(kernel, out$X, out$D))) / nrow(out$X)}.
+
+\code{print(fit)} displays the point-set size, update count, and evaluation
+count, and returns \code{fit} invisibly. \code{summary(fit)} returns a
+\code{"summary.stein_codescent"} object with components \code{method}, \code{kernel}, \code{n},
+\code{d}, \code{evaluation_label}, \code{n_eval_total}, \code{call}, and \code{n_iter};
+\code{evaluation_label} names what \code{n_eval_total} counts. Coordinate-descent
+objectives are not displayed because they change with the row being
+updated and are not point-set KSDs. Printing that object returns it
+invisibly.
 }
 \description{
 Refines a completed Stein point set one row at a time while holding the
@@ -45,19 +54,31 @@ increase.
 \details{
 At iteration \code{it}, row \eqn{r} \verb{= ((it - 1) \%\% nrow(X0)) + 1} is replaced by
 minimizing
-\deqn{k0(x,x) + 2\sum_{i\ne r} k0(x_i,x)}
-over \code{x}. This is the greedy objective of \code{\link[=stein_points]{stein_points()}}, except the set
-size stays fixed. With a single row the sum is empty and the objective is
-\eqn{k0(x,x)}.
+\deqn{k_{0,p}(x,x) + 2\sum_{i\ne r} k_{0,p}(x_i,x)}
+over \code{x}, where \eqn{k_{0,p}} is the Stein kernel formed from \code{kernel} and
+the target score. This is the greedy objective of \code{\link[=stein_points]{stein_points()}}, except
+the set size stays fixed. With a single row the sum is empty and the
+objective is \eqn{k_{0,p}(x,x)}.
 
 Because the optimizers are approximate, each proposal is compared with the
 current row under the same objective before it is accepted. The optimizer
 interface is the same as in \code{\link[=stein_points]{stein_points()}}.
 }
 \examples{
-score <- function(X) -as.matrix(X)
-kernel <- stein_kernel(type = "gaussian_rbf", h = 1)
-opt <- fmin_grid(lb = -1, ub = 1, n0 = 3, grow = FALSE)
-X0 <- matrix(c(-0.5, 0.5), ncol = 1)
-stein_codescent(X0, score, kernel, n_iter = 1, optimizer = opt)
+# Target: N(0, 1).
+score <- function(X) -X
+kernel <- stein_kernel("imq")
+X0 <- matrix(seq(-0.5, 0.5, length.out = 20), ncol = 1)
+opt <- fmin_grid(-4, 4, n0 = 401, grow = FALSE)
+fit <- stein_codescent(X0, score, kernel, n_iter = 40, optimizer = opt)
+ksd <- function(X) {
+  sqrt(max(0, sum(stein_kernel_matrix(kernel, X, score(X))))) / nrow(X)
+}
+c(before = ksd(X0), after = ksd(fit$X))
+}
+\references{
+Chen, W. Y., Mackey, L., Gorham, J., Briol, F.-X., and Oates, C. J. (2018).
+Stein Points. Proceedings of the 35th International Conference on Machine
+Learning, Proceedings of Machine Learning Research, 80, 844--853.
+\url{https://proceedings.mlr.press/v80/chen18f.html}.
 }

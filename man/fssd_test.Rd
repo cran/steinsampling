@@ -16,17 +16,19 @@ fssd_test(
   gamma = 1e-04,
   maxit = 100,
   locs_bounds_frac = 10,
-  scale_lower = 0.1,
-  scale_upper = 10000,
-  seed = NULL,
+  scale_lower = NULL,
+  scale_upper = NULL,
   imq_beta = -0.5
 )
 }
 \arguments{
-\item{X}{Numeric vector or matrix of samples (\verb{n x d}).}
+\item{X}{Numeric vector or matrix containing \code{n} independent and identically
+distributed observations. Rows are observations and columns are
+coordinates; a vector is treated as an
+\eqn{n\times 1} matrix.}
 
-\item{score_function}{Function returning the target score for each row of
-\code{X}; the output should have shape \verb{n x d}.}
+\item{score_function}{Function taking an \eqn{n\times d} matrix and
+returning the corresponding \eqn{n\times d} matrix of target scores.}
 
 \item{variant}{\code{"opt"} (default) or \code{"rand"}.}
 
@@ -43,7 +45,8 @@ value when the kernel needs a squared scale. A finite squared scale in a
 supplied \code{SteinKernel} takes precedence; \code{scaling} is ignored when the
 kernel exposes no squared scale.}
 
-\item{train_ratio}{Fraction of rows requested for FSSD-opt training.}
+\item{train_ratio}{Requested FSSD-opt training fraction in \eqn{(0,1)};
+the random split keeps at least two rows in each part.}
 
 \item{gamma}{Positive regularizer in the FSSD-opt criterion.}
 
@@ -53,9 +56,8 @@ kernel exposes no squared scale.}
 below each coordinate minimum and above each coordinate maximum.}
 
 \item{scale_lower, scale_upper}{Bounds applied to the squared kernel scale
-when that scale is optimized.}
-
-\item{seed}{Optional RNG seed.}
+when that scale is optimized. \code{NULL} uses 0.01 and 100 times the median
+squared distance of the training rows, kept within 1e-3 and 1e5.}
 
 \item{imq_beta}{Finite IMQ exponent \eqn{\beta<0}.}
 }
@@ -65,26 +67,34 @@ An \code{htest} object. \code{statistic} is
 held-out size for FSSD-opt and \eqn{n} for FSSD-rand; \code{p.value} is its
 simulated right-tail p-value; \code{info$V} is the test-location matrix, and
 \code{info} contains variant-specific diagnostics.
+Use \code{print(fit)} to display the test statistic and p-value.
 }
 \description{
-Runs a Finite Set Stein Discrepancy goodness-of-fit test. With
-\code{variant = "opt"} (the default), the test locations and any squared kernel
-scale are selected on training rows, and the statistic and null calibration
-use held-out rows; see \code{\link[=fssd_opt_test]{fssd_opt_test()}}. With \code{variant = "rand"}, all rows
-of \code{X} serve both purposes, so the p-value is heuristic; see
-\code{\link[=fssd_rand_test]{fssd_rand_test()}}.
+Tests independent and identically distributed observations against a target
+distribution specified by its score function, using Stein features at a
+finite set of test locations.
+\code{variant = "opt"} selects those locations on training rows and tests on
+held-out rows (\code{\link[=fssd_opt_test]{fssd_opt_test()}}); \code{variant = "rand"} draws them and tests
+on the same rows, so its p-value is heuristic (\code{\link[=fssd_rand_test]{fssd_rand_test()}}).
+}
+\details{
+Once the test locations and kernel have been selected, \code{\link[=compute_tau]{compute_tau()}}
+evaluates the Stein features at those locations. \code{\link[=fssd_statistic]{fssd_statistic()}} combines
+the feature rows into the scaled test statistic, and \code{\link[=fssd_null_pvalue]{fssd_null_pvalue()}}
+simulates its null distribution and computes the p-value.
 }
 \examples{
-X <- matrix(rnorm(40), ncol = 1)
-score_function <- function(x) -as.matrix(x)
-
-fssd_test(X, score_function, J = 1, scaling = 1,
-          train_ratio = 0.5, maxit = 2, n_simulations = 10)
-
-fssd_test(X, score_function, variant = "rand", J = 1,
-          scaling = 1, n_simulations = 10)
+set.seed(1)
+X <- matrix(rnorm(200, mean = 0.5), ncol = 1)
+score <- function(X) -X  # Target: N(0, 1)
+fit <- fssd_test(X, score, J = 3, scaling = 1, train_ratio = 0.5)
+c(statistic = unname(fit$statistic), p.value = fit$p.value)
+fit$info$convergence  # 0: successful optimizer termination.
 }
 \references{
-Jitkrittum et al. (2017), A Linear-Time Kernel Goodness-of-Fit
-Test.
+Jitkrittum, W., Xu, W., Szabó, Z., Fukumizu, K., and Gretton, A. (2017).
+A Linear-Time Kernel Goodness-of-Fit Test.
+Advances in Neural Information Processing Systems, 30, 262--271.
+Curran Associates, Inc.
+\url{https://papers.nips.cc/paper_files/paper/2017/hash/979d472a84804b9f647bc185a877a8b5-Abstract.html}.
 }

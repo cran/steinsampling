@@ -20,8 +20,9 @@ test_that("FSSD primitives return tau, statistic, and a bounded null summary", {
   )
 
   # The htest reports exactly the primitive computed at its own locations.
+  set.seed(101)
   rand <- fssd_rand_test(X, normal_score, J = 1, n_simulations = 5,
-                         scaling = 1, seed = 101)
+                         scaling = 1)
   expect_equal(unname(rand$statistic),
                fssd_statistic(compute_tau(X, normal_score(X), rand$info$V,
                                           kernel)))
@@ -31,12 +32,15 @@ test_that("FSSD primitives return tau, statistic, and a bounded null summary", {
 
 test_that("fssd_test dispatches to both variants and keeps their contracts", {
   X <- small_x(10)
-  common <- list(X, normal_score, J = 1, n_simulations = 5, seed = 1)
+  common <- list(X, normal_score, J = 1, n_simulations = 5)
 
+  set.seed(1)
   rand <- do.call(fssd_test, c(common, list(variant = "rand", scaling = 1)))
+  set.seed(1)
   opt <- do.call(fssd_test, c(common, list(
     variant = "opt", scaling = 1, train_ratio = 0.5, maxit = 1
   )))
+  set.seed(1)
   searched <- do.call(fssd_opt_test, c(common, list(
     train_ratio = 0.5, maxit = 1
   )))
@@ -46,7 +50,7 @@ test_that("fssd_test dispatches to both variants and keeps their contracts", {
   expect_equal(rand$info$variant, "rand")
   expect_equal(opt$info$variant, "opt")
   expect_equal(opt$info$n_train + opt$info$n_test, nrow(X))
-  expect_s3_class(rand$kernel, "SteinKernel_gaussian_rbf")
+  expect_identical(class(rand$kernel), "SteinKernel")
   # An explicit `scaling` skips the median grid; leaving it out searches one.
   expect_null(opt$info$scale_grid)
   expect_length(searched$info$scale_grid, 5L)
@@ -55,13 +59,15 @@ test_that("fssd_test dispatches to both variants and keeps their contracts", {
   # Forwarding must not rename the caller's data.
   my_sample <- small_x(8)
   for (v in c("opt", "rand")) {
+    set.seed(1)
     fit <- fssd_test(my_sample, normal_score, variant = v, J = 1,
-                     n_simulations = 5, scaling = 1, seed = 1)
+                     n_simulations = 5, scaling = 1)
     expect_identical(fit$data.name, "my_sample")
   }
+  set.seed(1)
   expect_identical(
     fssd_rand_test(my_sample, normal_score, J = 1, n_simulations = 5,
-                   scaling = 1, seed = 1)$data.name,
+                   scaling = 1)$data.name,
     "my_sample"
   )
 })
@@ -69,7 +75,7 @@ test_that("fssd_test dispatches to both variants and keeps their contracts", {
 test_that("FSSD scale updates preserve the preconditioner and its metric", {
   precon <- matrix(2, nrow = 1)
   kernel <- stein_kernel(type = "gaussian_rbf", h = 1, precon = precon)
-  updated <- kernel_scale2(kernel, 4)
+  updated <- scale2_kernel(kernel, 4)
 
   expect_equal(updated$scale2, 4)
   expect_equal(updated$precon, precon)
@@ -99,9 +105,10 @@ test_that("FSSD scale updates preserve the preconditioner and its metric", {
 test_that("FSSD honours its documented control parameters", {
   X <- small_x(4)
 
+  set.seed(1)
   expect_no_error(fssd_opt_test(
     X, normal_score, J = 1, n_simulations = 2, scaling = 1,
-    train_ratio = 0.2, maxit = 1, seed = 1
+    train_ratio = 0.2, maxit = 1
   ))
   expect_error(
     fssd_rand_test(X, normal_score, J = 0, n_simulations = 2, scaling = 1),
@@ -112,10 +119,11 @@ test_that("FSSD honours its documented control parameters", {
     "train_ratio"
   )
   # A tiny explicit scale must survive as given.
+  set.seed(1)
   expect_equal(
-    kernel_scale2(fssd_rand_test(
+    scale2_kernel(fssd_rand_test(
       small_x(8), normal_score, J = 1, n_simulations = 2,
-      kernel = "imq", scaling = 1e-12, seed = 1
+      kernel = "imq", scaling = 1e-12
     )$kernel),
     1e-12
   )

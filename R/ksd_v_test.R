@@ -1,5 +1,3 @@
-# KSD-V test, statistic, and wild bootstrap.
-
 #' KSD-V goodness-of-fit test with wild-bootstrap calibration
 #'
 #' Tests observations against a target distribution specified by its score
@@ -9,11 +7,14 @@
 #' @details
 #' Let \eqn{s_p(x)=\nabla_x\log p(x)} and
 #' \deqn{K_{ij}=k_{0,p}(X_i,X_j),}
-#' where \eqn{k_{0,p}} is defined in [stein_kernel_matrix()]. The test uses
+#' where \eqn{k_{0,p}} is defined in [stein_kernel_matrix()]. To construct this
+#' matrix separately from the observations, score function, and kernel, use
+#' [ksd_vq_matrix()]. The test uses
 #' \deqn{V_n=\frac{1}{n^2}\sum_{i=1}^n\sum_{j=1}^nK_{ij},\qquad
 #' nV_n=\frac{1}{n}\sum_{i=1}^n\sum_{j=1}^nK_{ij}.}
 #' The diagonal is retained. For a positive-definite base kernel, \eqn{V_n} is
-#' nonnegative but upward biased for the population squared KSD.
+#' nonnegative but upward biased for the population squared KSD. The scaled
+#' statistic \eqn{nV_n} can be computed separately with [ksd_v_statistic()].
 #'
 #' `boot_method = "rademacher"` uses independent signs and is intended for
 #' independent observations. `boot_method = "markov"` uses correlated signs
@@ -23,7 +24,8 @@
 #' probabilities \eqn{a_n} must asymptotically satisfy \eqn{a_n\to0} and
 #' \eqn{na_n\to\infty}.
 #'
-#' If \eqn{nV_n^{*(1)},\ldots,nV_n^{*(B)}} are the bootstrap draws, the
+#' [ksd_v_bootstrap()] generates bootstrap draws on the same scale as the
+#' observed statistic. If \eqn{nV_n^{*(1)},\ldots,nV_n^{*(B)}} are these draws, the
 #' reported right-tail p-value is
 #' \deqn{\widehat p=\frac{1+\sum_{b=1}^B
 #' \mathbf{1}\{nV_n^{*(b)}\ge nV_n\}}{B+1}.}
@@ -45,14 +47,23 @@
 #' An `htest` object. `statistic` is \eqn{nV_n}; `p.value` is the bootstrap
 #' p-value above. `parameter` records `nboot`, `scaling`, and `change_prob`,
 #' plus `imq_beta` for an IMQ kernel; `kernel` contains the resolved
-#' `SteinKernel` object. If `return_raw_boot = TRUE`, `bootstrap_samples`
-#' contains \eqn{nV_n^{*(1)},\ldots,nV_n^{*(B)}}.
-#' @references Chwialkowski, Strathmann, and Gretton (2016), A Kernel Test of
-#' Goodness of Fit.
+#' `SteinKernel` object.
+#'
+#' With `return_raw_boot = TRUE`, `bootstrap_samples` holds
+#' \eqn{nV_n^{*(1)},\ldots,nV_n^{*(B)}}.
+#' Use `print(fit)` to display the test statistic and p-value.
+#' @references
+#' Chwialkowski, K., Strathmann, H., and Gretton, A. (2016).
+#' A Kernel Test of Goodness of Fit.
+#' Proceedings of the 33rd International Conference on Machine Learning,
+#' Proceedings of Machine Learning Research, 48, 2606--2615.
+#' \url{https://proceedings.mlr.press/v48/chwialkowski16.html}.
 #' @examples
-#' X <- matrix(rnorm(20), ncol = 1)
-#' score_function <- function(x) -as.matrix(x)
-#' ksd_v_test(X, score_function, nboot = 10)
+#' set.seed(1)
+#' X <- matrix(rnorm(200, mean = 0.5), ncol = 1)
+#' score <- function(X) -X  # Target: N(0, 1)
+#' fit <- ksd_v_test(X, score, scaling = 1)
+#' print(fit)
 #' @export
 ksd_v_test <- function(X, score_function,
                        boot_method = c("rademacher", "markov"),
@@ -82,7 +93,6 @@ ksd_v_test <- function(X, score_function,
   n <- nrow(prep$X)
 
   block_settings <- .resolve_block_settings(n, block_size, block_threshold)
-  # Wild-bootstrap columns are sign sequences; Markov signs retain sample-order dependence.
   W_mat <- .generate_bootstrap_weights(
     n, nboot, boot_method, change_prob = change_prob
   )
@@ -108,9 +118,9 @@ ksd_v_test <- function(X, score_function,
     data.name = data_name,
     parameter = c(
       nboot = nboot,
-      scaling = if (is.null(prep$scaling)) NA_real_ else prep$scaling,
+      scaling = prep$scaling,
       change_prob = resolved_change_prob,
-      if (prep$kernel_name == "imq" && !is.null(prep$kernel_obj$beta))
+      if (prep$kernel_name == "imq")
         c(imq_beta = prep$kernel_obj$beta)
     ),
     kernel = prep$kernel_obj
@@ -125,31 +135,18 @@ ksd_v_test <- function(X, score_function,
 #' @export
 ksd_vq_matrix <- ksd_uq_matrix
 
-#' Compute the KSD-V statistic
+#' KSD-V statistic and its bootstrap
 #'
+#' Returns \eqn{nV_n}, calculated from the supplied Stein-kernel matrix with
+#' the diagonal included, and the bootstrap statistics used to calculate a
+#' KSD-V p-value.
+#'
+#' @rdname ksd_v_components
 #' @details
-#' For \eqn{K_{ij}=k_{0,p}(X_i,X_j)}, this function returns
+#' For \eqn{K_{ij}=k_{0,p}(X_i,X_j)}, [ksd_v_statistic()] returns
 #' \deqn{nV_n=\frac{1}{n}\sum_{i=1}^n\sum_{j=1}^nK_{ij}.}
-#' All ordered pairs, including \eqn{i=j}, are included. This function does not
-#' compute bootstrap draws or a p-value.
 #'
-#' @param K0 Finite numeric \eqn{n\times n} Stein-kernel matrix with
-#'   \eqn{n\ge 2}, such as the output of [ksd_vq_matrix()].
-#' @return
-#' One numeric value, \eqn{nV_n}.
-#' @examples
-#' U <- matrix(c(1, 0.2, 0.3, 0.2, 1, 0.4, 0.3, 0.4, 1), 3, 3)
-#' ksd_v_statistic(U)
-#' @export
-ksd_v_statistic <- function(K0) {
-  K0 <- .validate_stein_matrix(K0)
-  sum(K0) / nrow(K0)
-}
-
-#' Wild bootstrap for KSD-V
-#'
-#' @details
-#' For sign vector \eqn{W^{(b)}}, the returned draw is
+#' For sign vector \eqn{W^{(b)}}, the draw returned by [ksd_v_bootstrap()] is
 #' \deqn{nV_n^{*(b)}=\frac{1}{n}\sum_{i=1}^n\sum_{j=1}^n
 #' W_i^{(b)}W_j^{(b)}K_{ij}.}
 #' Rademacher signs are independent and take values \eqn{-1} and \eqn{1} with
@@ -159,12 +156,39 @@ ksd_v_statistic <- function(K0) {
 #' -W_{t-1}^{(b)},&\text{with probability }a_n,\\
 #' W_{t-1}^{(b)},&\text{with probability }1-a_n.
 #' \end{cases}}
-#' Here \eqn{a_n} is `change_prob`. All matrix entries, including the diagonal,
-#' are used. The draws are on the same scale as [ksd_v_statistic()]. This
-#' function does not compute a p-value.
+#' Here \eqn{a_n} is `change_prob`.
+#' The draws are on the same scale as [ksd_v_statistic()]. Neither
+#' function computes a p-value.
+#' For the complete goodness-of-fit test, see [ksd_v_test()].
 #'
 #' @param K0 Finite numeric \eqn{n\times n} Stein-kernel matrix with
 #'   \eqn{n\ge 2}, such as the output of [ksd_vq_matrix()].
+#' @return
+#' [ksd_v_statistic()] returns one numeric value, \eqn{nV_n}.
+#' [ksd_v_bootstrap()] returns a numeric vector containing
+#' \eqn{nV_n^{*(1)},\ldots,nV_n^{*(B)}}.
+#' @references
+#' Chwialkowski, K., Strathmann, H., and Gretton, A. (2016).
+#' A Kernel Test of Goodness of Fit.
+#' Proceedings of the 33rd International Conference on Machine Learning,
+#' Proceedings of Machine Learning Research, 48, 2606--2615.
+#' \url{https://proceedings.mlr.press/v48/chwialkowski16.html}.
+#' @examples
+#' # Target: N(0, 1).
+#' set.seed(1)
+#' X <- matrix(rnorm(200, mean = 0.5), ncol = 1)
+#' K0 <- ksd_vq_matrix(X, function(X) -X, scaling = 1)
+#' statistic <- ksd_v_statistic(K0)
+#' draws <- ksd_v_bootstrap(K0)
+#' c(statistic = statistic,
+#'   p.value = (1 + sum(draws >= statistic)) / (length(draws) + 1))
+#' @export
+ksd_v_statistic <- function(K0) {
+  K0 <- .validate_stein_matrix(K0)
+  sum(K0) / nrow(K0)
+}
+
+#' @rdname ksd_v_components
 #' @param nboot Positive integer number of bootstrap draws. Ignored when
 #'   `W_mat` is supplied.
 #' @param W_mat Optional finite numeric \eqn{n\times B} multiplier matrix. If
@@ -174,11 +198,6 @@ ksd_v_statistic <- function(K0) {
 #'   `"markov"`.
 #' @param change_prob Markov sign-change probability \eqn{a_n}. It must be
 #'   supplied and lie strictly between 0 and 1 when `boot_method = "markov"`.
-#' @return
-#' Numeric vector containing \eqn{nV_n^{*(1)},\ldots,nV_n^{*(B)}}.
-#' @examples
-#' U <- matrix(c(1, 0.2, 0.3, 0.2, 1, 0.4, 0.3, 0.4, 1), 3, 3)
-#' ksd_v_bootstrap(U, nboot = 5)
 #' @export
 ksd_v_bootstrap <- function(K0, nboot = 1000, W_mat = NULL,
                             boot_method = c("rademacher", "markov"),
@@ -208,7 +227,8 @@ ksd_v_bootstrap <- function(K0, nboot = 1000, W_mat = NULL,
     colSums((K0 %*% W_mat) * W_mat) / n
   )
 
-  # Zero the diagonal only for the degeneracy diagnostic.
+  # The statistic above already used the diagonal. Zeroing it here only serves
+  # the degeneracy check.
   k_diag <- diag(K0)
   diag(K0) <- 0
 
@@ -252,10 +272,12 @@ ksd_v_bootstrap <- function(K0, nboot = 1000, W_mat = NULL,
       )
 
       stat_sum <- stat_sum + sum(K0_block)
-      # ksd_v_statistic() reports n V_n, so bootstrap blocks are accumulated on the same scale.
+      # ksd_v_statistic reports n V_n, so each bootstrap block is divided by n
+      # to stay on that scale.
       boot_stats <- boot_stats + colSums((K0_block %*% W_j) * W_i) / n
 
-      # Zero the diagonal only for the degeneracy diagnostic.
+      # The statistic already includes this block's diagonal. Zeroing it here
+      # only serves the degeneracy check.
       if (i_start == j_start) {
         diag_max <- max(diag_max, max(abs(diag(K0_block))))
         diag(K0_block) <- 0

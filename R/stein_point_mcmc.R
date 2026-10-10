@@ -1,6 +1,5 @@
-# Stein Point MCMC, its transition kernels, and extension points.
-
-# Public complete algorithm
+# sp_mcmc and its candidate objective come first, then the MALA and RWM
+# transitions, then the start rules and the main loop.
 
 #' Select Stein points from short Markov chains
 #'
@@ -14,7 +13,8 @@
 #'       +2\sum_{i=1}^{j-1}k_{0,p}(x_i,x),}
 #' where \eqn{k_{0,p}} is the Stein kernel formed from `kernel` and the target
 #' score. The returned `ksd` is the running discrepancy defined in
-#' [stein_points()].
+#' [stein_points()]. [sp_mcmc_eval_candidates()] evaluates the greedy objective
+#' for the candidate rows, reusing their scores when available.
 #'
 #' `criterion` chooses the selected point where each path starts. A path with
 #' `m_seq` states makes `m_seq - 1` transitions. Built-in paths use [rwm()] or
@@ -22,10 +22,11 @@
 #' drift. To use a covariance `S` for both the path and kernel distance, set
 #' `Sigma = S` and the kernel's `precon = solve(S)`.
 #'
-#' @param score_function Function taking an `n x d` matrix and returning the
-#'   corresponding `n x d` matrix of target scores.
-#' @param log_p Function taking an `n x d` matrix and returning `n` log-density
-#'   values.
+#' @param score_function Function taking an \eqn{n\times d} matrix and
+#'   returning the corresponding \eqn{n\times d} matrix of target scores.
+#'   [sp_mcmc_eval_candidates()] uses it to score candidate rows.
+#' @param log_p Function taking an \eqn{n\times d} matrix and returning `n`
+#'   log-density values.
 #' @param kernel A `SteinKernel` object. A Gaussian RBF kernel must have a
 #'   fixed positive bandwidth.
 #' @param n_points Total number of points, including `x_init`.
@@ -42,7 +43,6 @@
 #' @param Sigma Symmetric positive-definite matrix used by the built-in
 #'   transitions. If `NULL`, the identity matrix is used.
 #' @param x_init Initial finite numeric vector of length `d`.
-#' @param seed Optional RNG seed.
 #' @param transition_fn Optional function replacing [rwm()] or [mala()].
 #' @param proposal_fn Optional per-step update of `h` or `Sigma`; see Extensions.
 #'
@@ -53,45 +53,98 @@
 #' `state` contains `j`, `X`, `D`, `K0`, recorded diagnostics, and run settings.
 #'
 #' A custom `transition_fn(log_p, score_function, x0, h, Sigma, m_iter)` returns
-#' `X`, `D`, and `counts`; `X` starts at `x0`, `D` may be `NULL`, and optional
-#' `accept` is a length-`m_iter` vector of 0/1 indicators with initial entry 0.
-#' `counts` contains nonnegative integer `log_p`, `score`, and `total` counts,
-#' with `total = log_p + score`.
+#' `X` and `counts`; `X` starts at `x0`, optional `D` holds the scores of `X`,
+#' and optional `accept` is a length-`m_iter` vector of 0/1 indicators with
+#' initial entry 0. `counts` contains nonnegative integer `log_p` and `score`
+#' counts.
 #'
 #' `proposal_fn(j, X_curr, h, Sigma, mcmc)` returns a list containing `h`
 #' and/or `Sigma`; an empty list keeps both inputs. Changes apply only at step `j`.
 #'
+#' [sp_mcmc_eval_candidates()] returns one greedy-objective value per row of
+#' `cand_X`. Supply `cand_D` to reuse candidate scores; otherwise
+#' `score_function` evaluates them.
+#'
+#' @details
+#' `summary(fit)` reports `accept_rate` weighted by the number of transitions in
+#' each path;
+#' paths without acceptance diagnostics are omitted. `n_repeated` counts
+#' selected points that repeat an earlier one; a candidate path contains its own
+#' starting state, so repeats are expected. The reported `h` is the initial
+#' step size, before any per-step proposal changes. `counts` contains the
+#' `log_p`, `score`, and `candidate_score` column totals; `n_eval_total`
+#' reports their total once.
+#'
 #' @return
-#' An `"sp_mcmc"` object containing selected points `X`, scores `D`, and `ksd`;
-#' per-step and cumulative evaluation counts; path-start, distance, acceptance,
-#' and repeated-point diagnostics; recorded settings; and the matched `call`.
-#' Initial
-#' diagnostics are `NA`. Recorded `h` and `Sigma` are the original inputs, not
-#' step-specific replacements.
-#' @seealso [stein_points()], [sp_mcmc_eval_candidates()], [rwm()], [mala()]
-#' @references Chen et al. (2019), Stein Point Markov Chain Monte Carlo.
+#' An `"sp_mcmc"` object with:
+#' * `X` and `D`: \eqn{n_{\mathrm{points}}\times d} matrices of selected points
+#'   and their scores.
+#' * `ksd`: running discrepancy after each point.
+#' * `n_eval`: evaluations at each step; `cum_n_eval = cumsum(n_eval)`.
+#' * `counts`: the `log_p`, `score`, and `candidate_score` counts at each step.
+#' * `selected_index`: row of `X` that each path started from.
+#' * `accept_rate`: share of accepted proposals in each path.
+#' * `chain_d2_max`, `chain_d2_selected`, `chain_d2_last`: squared distances
+#'   from each path's starting state to its farthest state, the state kept, and
+#'   its last state.
+#' * `n_repeated`: number of selected points that repeat an earlier one.
+#' * `mcmc`, `transition`, `criterion`, `m_seq`, `h`, `Sigma`, and `kernel`:
+#'   settings used by the run.
+#' * `method` and `call`: method label and matched call.
+#'
+#' The first point has no path, so its diagnostic entries are `NA`. Recorded
+#' `h` and `Sigma` are the original inputs, not step-specific replacements.
+#'
+#' [sp_mcmc_eval_candidates()] returns a list with:
+#' * `objective_values`: one comparison value per candidate row.
+#' * `scores`: candidate scores, reused from `cand_D` when supplied.
+#' * `k0_diag`: Stein-kernel diagonal for the candidate rows.
+#' * `score_evaluations`: rows scored here; zero when `cand_D` is supplied.
+#'
+#' `print(fit)` displays the transition method, selection rule, point-set
+#' size, final KSD, and evaluation count, and returns `fit` invisibly.
+#' `summary(fit)` returns a `"summary.sp_mcmc"` object with
+#' `transition`, `criterion`, `m_seq`, `h`, `accept_rate`, `n_repeated`, and
+#' `counts`. Printing that object returns it invisibly.
+#' @seealso [stein_points()], [rwm()], [mala()]
+#' @references
+#' Chen, W. Y., Barp, A., Briol, F.-X., Gorham, J., Girolami, M.,
+#' Mackey, L., and Oates, C. J. (2019).
+#' Stein Point Markov Chain Monte Carlo.
+#' Proceedings of the 36th International Conference on Machine Learning,
+#' Proceedings of Machine Learning Research, 97, 1011--1021.
+#' \url{https://proceedings.mlr.press/v97/chen19b.html}.
 #' @examples
-#' score <- function(X) -as.matrix(X)
-#' log_p <- function(X) -0.5 * rowSums(as.matrix(X)^2)
-#' kernel <- stein_kernel(type = "gaussian_rbf", h = 1)
-#' sp_mcmc(score, log_p, kernel, n_points = 2, d = 1, m_seq = 2, h = 0.1,
-#'         x_init = 0)
+#' # Target: N(0, 1).
+#' set.seed(1)
+#' score <- function(X) -X
+#' log_p <- function(X) -0.5 * rowSums(X^2)
+#' kernel <- stein_kernel("imq")
+#' fit <- sp_mcmc(score, log_p, kernel, n_points = 50, d = 1,
+#'                m_seq = 50, h = 1, x_init = 0)
+#' summary(fit)
+#' c(mean = mean(fit$X), second_moment = mean(fit$X^2))  # Targets: 0 and 1
+#'
+#' X_curr <- matrix(0, ncol = 1)
+#' D_curr <- score(X_curr)
+#' cand_X <- matrix(c(-0.5, 0.5), ncol = 1)
+#' sp_mcmc_eval_candidates(kernel, score, X_curr, D_curr, cand_X)
 #' @export
 sp_mcmc <- function(score_function, log_p, kernel, n_points, d,
                     mcmc = c("rwm", "mala"),
                     criterion = c("last", "rand", "infl"),
                     m_seq, h, Sigma = NULL,
-                    x_init, seed = NULL,
+                    x_init,
                     transition_fn = NULL, proposal_fn = NULL) {
   cl <- match.call()
 
   if (!is.function(score_function))
     stop("`score_function` must be a function", call. = FALSE)
   if (!is.function(log_p)) stop("`log_p` must be a function", call. = FALSE)
-  if (!is.numeric(h) || length(h) != 1L || !is.finite(h) || h <= 0)
-    stop("h must be a positive scalar", call. = FALSE)
+  validate_positive_scalar(h, "h")
   mcmc <- match.arg(mcmc)
-  # Display name only; `mcmc` keeps its meaning for `proposal_fn`.
+  # transition is only the printed name. mcmc keeps its value because
+  # proposal_fn receives it.
   transition <- if (is.null(transition_fn)) mcmc else {
     nm <- deparse(substitute(transition_fn))
     if (length(nm) == 1L && grepl("^[[:alnum:]._]+$", nm)) nm else "custom"
@@ -111,126 +164,114 @@ sp_mcmc <- function(score_function, log_p, kernel, n_points, d,
     .prepare_mcmc_covariance(Sigma, d)
   }
 
-  with_local_seed(
-    seed,
-    .sp_mcmc_run(
-      score_function = score_function,
-      log_p = log_p,
-      kernel = kernel,
-      n_points = n_points,
-      d = d,
-      mcmc = mcmc,
-      criterion_obj = criterion_obj,
-      m_seq = m_seq,
-      h = h,
-      Sigma = Sigma,
-      x_init = x_init,
-      transition_fn = transition_fn,
-      transition = transition,
-      proposal_fn = proposal_fn,
-      call = cl
-    )
+  .sp_mcmc_run(
+    score_function = score_function,
+    log_p = log_p,
+    kernel = kernel,
+    n_points = n_points,
+    d = d,
+    mcmc = mcmc,
+    criterion_obj = criterion_obj,
+    m_seq = m_seq,
+    h = h,
+    Sigma = Sigma,
+    x_init = x_init,
+    transition_fn = transition_fn,
+    transition = transition,
+    proposal_fn = proposal_fn,
+    call = cl
   )
 }
 
 
-# Public greedy objective for candidate sets
-
-#' Score candidate points with the greedy Stein objective
-#'
-#' Scores candidate rows using the greedy objective minimized by [sp_mcmc()].
-#'
-#' @details
-#' For each candidate `x`, the value used for comparison is
-#' \deqn{k0(x, x) + 2 \sum_i k0(x_i, x),}
-#' where the sum runs over rows in `X_curr`. `objective_values` contains one
-#' comparison value per candidate row, in the same order as `cand_X`. If the MCMC
-#' transition already returned candidate scores, pass them as `cand_D`;
-#' otherwise this function evaluates `score_function` on the candidate rows and
-#' records how many rows were scored.
-#'
-#' @param kernel A `SteinKernel` object. A Gaussian RBF kernel must have a
-#'   fixed positive bandwidth.
-#' @param score_function Function returning scores for candidate rows.
+#' @rdname sp_mcmc
 #' @param X_curr Current selected point matrix.
 #' @param D_curr Current score matrix.
 #' @param cand_X Candidate point matrix.
 #' @param cand_D Optional candidate score matrix.
-#'
-#' @return
-#' A list with:
-#' * `objective_values`: one comparison value per candidate row.
-#' * `scores`: candidate scores, reused from `cand_D` when supplied.
-#' * `k0_diag`: Stein-kernel diagonal for the candidate rows.
-#' * `score_evaluations`: rows scored here; zero when `cand_D` is supplied.
-#' @examples
-#' score <- function(X) -as.matrix(X)
-#' kernel <- stein_kernel(type = "gaussian_rbf", h = 1)
-#' X_curr <- matrix(0, ncol = 1)
-#' D_curr <- score(X_curr)
-#' cand_X <- matrix(c(-0.5, 0.5), ncol = 1)
-#' sp_mcmc_eval_candidates(kernel, score, X_curr, D_curr, cand_X)
 #' @export
 sp_mcmc_eval_candidates <- function(kernel, score_function, X_curr, D_curr,
                                     cand_X, cand_D = NULL) {
   if (!is.function(score_function))
     stop("`score_function` must be a function", call. = FALSE)
   require_fixed_gaussian_rbf(kernel, "SP-MCMC candidate evaluation")
-  # Use the same greedy objective as Stein Points.
   obj <- .obj_greedy(kernel, score_function, X_curr, D_curr)
-  score_evaluations <- 0L
-  if (is.null(cand_D)) {
-    out <- obj(cand_X)
-    score_evaluations <- nrow(cand_X)
-  } else {
-    out <- obj(cand_X, cand_D)
-  }
-  out$score_evaluations <- score_evaluations
+  out <- obj(cand_X, cand_D)
+  out$score_evaluations <- if (is.null(cand_D)) nrow(cand_X) else 0L
   out
 }
 
 
-# Public MCMC transition kernels
-
-#' Run a Metropolis-adjusted Langevin chain
+#' Markov transitions for SP-MCMC
 #'
-#' Runs the MALA transition used by SP-MCMC.
+#' Runs the MALA or the Gaussian random-walk Metropolis transition used by
+#' [sp_mcmc()].
 #'
+#' @rdname mcmc_transitions
 #' @details
-#' From the current state `x`, the proposal is
-#' \deqn{y = x + (h / 2) s_p(x) Sigma + \sqrt{h} z,
-#'       \quad z \sim N(0, Sigma),}
+#' From the current state `x`, the [mala()] proposal is
+#' \deqn{y = x + (h/2)\Sigma s_p(x) + z,
+#'       \quad z \sim N(0, h\Sigma),}
 #' so the proposal covariance is `h * Sigma`. The function evaluates `log_p`
 #' at `y`; `-Inf` rejects the proposal. Otherwise it evaluates the score at `y`,
 #' forms the reverse proposal, and applies the Metropolis correction. Row 1 of
 #' the output is `x0`; `m_iter - 1` proposals follow.
 #'
-#' @param log_p Function taking an `n x d` matrix and returning `n` log-density
-#'   values.
-#' @param score_function Function taking an `n x d` matrix and returning an
-#'   `n x d` score matrix.
+#' From the current state `x`, the [rwm()] proposal is
+#' \deqn{y = x + z, \quad z \sim N(0, h\Sigma).}
+#' The function evaluates `log_p(y)` and accepts with probability
+#' `min(1, exp(log_p(y) - log_p(x)))`; `-Inf` is rejected. Row 1 of the output
+#' is `x0`; `m_iter - 1` proposals follow. RWM does not evaluate the score.
+#' [sp_mcmc_eval_candidates()] computes candidate scores later.
+#'
+#' @param log_p Function taking an \eqn{n\times d} matrix and returning `n`
+#'   log-density values.
+#' @param score_function Function taking an \eqn{n\times d} matrix and
+#'   returning the corresponding \eqn{n\times d} matrix of target scores.
 #' @param x0 Finite initial state vector.
 #' @param h Positive step-size multiplier; the proposal covariance is
 #'   `h * Sigma`.
-#' @param Sigma Symmetric positive-definite proposal preconditioner, used for
-#'   both the drift and the noise. If `NULL`, the identity matrix is used.
+#' @param Sigma Symmetric positive-definite proposal covariance scale. For
+#'   [mala()] it preconditions both the drift and the noise. If `NULL`, the
+#'   identity matrix is used.
 #' @param m_iter Number of returned chain rows, including `x0` in row 1.
 #'
 #' @return
-#' A list with:
+#' [mala()] returns a list with:
 #' * `X`: chain states.
 #' * `D`: scores at those states, reused by SP-MCMC.
 #' * `log_p`: log-density values at those states.
 #' * `accept`: 0/1 indicators, with 0 in row 1.
 #' * `counts`: numbers of rows evaluated by `log_p` and `score_function`;
 #'   `n_eval = counts$total`.
+#'
+#' [rwm()] returns a list with:
+#' * `X`: chain states.
+#' * `log_p`: log-density values at those states.
+#' * `accept`: 0/1 indicators, with 0 in row 1.
+#' * `D = NULL`, because RWM computes no scores.
+#' * `counts`: row counts with `counts$score = 0`; `n_eval = counts$total =
+#'   counts$log_p`.
+#' @references
+#' Chen, W. Y., Barp, A., Briol, F.-X., Gorham, J., Girolami, M.,
+#' Mackey, L., and Oates, C. J. (2019).
+#' Stein Point Markov Chain Monte Carlo.
+#' Proceedings of the 36th International Conference on Machine Learning,
+#' Proceedings of Machine Learning Research, 97, 1011--1021.
+#' \url{https://proceedings.mlr.press/v97/chen19b.html}.
 #' @examples
-#' score <- function(X) -as.matrix(X)
-#' log_p <- function(X) -0.5 * rowSums(as.matrix(X)^2)
-#' mala(log_p, score, x0 = 0, h = 0.1, m_iter = 3)
+#' # Target: N(0, 1).
+#' set.seed(1)
+#' score <- function(X) -X
+#' log_p <- function(X) -0.5 * rowSums(X^2)
+#' x0 <- rnorm(1)
+#' chains <- list(mala = mala(log_p, score, x0, h = 1, m_iter = 1000),
+#'                rwm = rwm(log_p, x0, h = 1, m_iter = 1000))
+#' # Acceptance rate over proposals (rows 2:1000).
+#' vapply(chains, function(z) mean(z$accept[-1]), numeric(1))
 #' @export
 mala <- function(log_p, score_function, x0, h, Sigma = NULL, m_iter) {
-  if (!is.function(score_function)) stop("score_function must be a function", call. = FALSE)
+  if (!is.function(score_function)) stop("`score_function` must be a function", call. = FALSE)
   setup <- .mcmc_setup(log_p, x0, h, Sigma, m_iter)
   x0 <- setup$x0
   d <- setup$d
@@ -264,7 +305,7 @@ mala <- function(log_p, score_function, x0, h, Sigma = NULL, m_iter) {
 
       lp_y <- log_p(matrix(y, 1L, d))
       if (!is.numeric(lp_y) || length(lp_y) != 1L || is.na(lp_y) || lp_y == Inf) {
-        stop("log_p must return one numeric value for each proposal", call. = FALSE)
+        stop("log_p must return one finite or -Inf value for each proposal", call. = FALSE)
       }
       lp_y <- as.numeric(lp_y)
       log_p_eval <- log_p_eval + 1L
@@ -278,7 +319,8 @@ mala <- function(log_p, score_function, x0, h, Sigma = NULL, m_iter) {
       score_eval <- score_eval + 1L
       m_y <- y + (h / 2) * as.numeric(d_y %*% Sigma)
 
-      # Correct for the asymmetric Langevin proposal.
+      # The Langevin proposal is not symmetric, so the acceptance ratio includes
+      # both proposal densities.
       q_old_given_y <- sum(forwardsolve(t(U), x_c - m_y)^2)
       q_y_given_old <- sum(forwardsolve(t(U), y - m_x)^2)
       log_a <- (lp_y - lp_c) + 0.5 * (q_y_given_old - q_old_given_y)
@@ -304,38 +346,7 @@ mala <- function(log_p, score_function, x0, h, Sigma = NULL, m_iter) {
   )
 }
 
-#' Run a Gaussian random-walk Metropolis chain
-#'
-#' Runs the Gaussian random-walk Metropolis transition used by SP-MCMC.
-#'
-#' @details
-#' From the current state `x`, the proposal is
-#' \deqn{y = x + z, \quad z \sim N(0, h Sigma).}
-#' The function evaluates `log_p(y)` and accepts with probability
-#' `min(1, exp(log_p(y) - log_p(x)))`; `-Inf` is rejected. Row 1 of the output
-#' is `x0`; `m_iter - 1` proposals follow. RWM does not evaluate the score.
-#' [sp_mcmc_eval_candidates()] computes candidate scores later.
-#'
-#' @param log_p Function taking an `n x d` matrix and returning `n` log-density
-#'   values.
-#' @param x0 Finite initial state vector.
-#' @param h Positive step-size multiplier. The proposal covariance is
-#'   `h * Sigma`.
-#' @param Sigma Symmetric positive-definite proposal covariance scale. If
-#'   `NULL`, the identity matrix is used.
-#' @param m_iter Number of returned chain rows, including `x0` in row 1.
-#'
-#' @return
-#' A list with:
-#' * `X`: chain states.
-#' * `log_p`: log-density values at those states.
-#' * `accept`: 0/1 indicators, with 0 in row 1.
-#' * `D = NULL`, because RWM computes no scores.
-#' * `counts`: row counts with `counts$score = 0`; `n_eval = counts$total =
-#'   counts$log_p`.
-#' @examples
-#' log_p <- function(X) -0.5 * rowSums(as.matrix(X)^2)
-#' rwm(log_p, x0 = 0, h = 0.1, m_iter = 3)
+#' @rdname mcmc_transitions
 #' @export
 rwm <- function(log_p, x0, h, Sigma = NULL, m_iter) {
   setup <- .mcmc_setup(log_p, x0, h, Sigma, m_iter)
@@ -358,7 +369,7 @@ rwm <- function(log_p, x0, h, Sigma = NULL, m_iter) {
       y <- X[i - 1L, ] + as.numeric(stats::rnorm(d) %*% U)
       lp_y <- log_p(matrix(y, 1L, d))
       if (!is.numeric(lp_y) || length(lp_y) != 1L || is.na(lp_y) || lp_y == Inf) {
-        stop("log_p must return one numeric value for each proposal", call. = FALSE)
+        stop("log_p must return one finite or -Inf value for each proposal", call. = FALSE)
       }
       lp_y <- as.numeric(lp_y)
       log_p_eval <- log_p_eval + 1L
@@ -379,15 +390,13 @@ rwm <- function(log_p, x0, h, Sigma = NULL, m_iter) {
   )
 }
 
-# Validate inputs shared by RWM and MALA.
 .mcmc_setup <- function(log_p, x0, h, Sigma, m_iter) {
-  if (!is.function(log_p)) stop("log_p must be a function", call. = FALSE)
+  if (!is.function(log_p)) stop("`log_p` must be a function", call. = FALSE)
   if (!is.numeric(x0) || length(x0) < 1L || any(!is.finite(x0)))
     stop("x0 must be a finite numeric vector", call. = FALSE)
   x0 <- as.numeric(x0)
   d <- length(x0)
-  if (!is.numeric(h) || length(h) != 1L || !is.finite(h) || h <= 0)
-    stop("h must be a positive scalar", call. = FALSE)
+  validate_positive_scalar(h, "h")
   covariance <- .prepare_mcmc_covariance(Sigma, d)
 
   list(
@@ -430,32 +439,23 @@ rwm <- function(log_p, x0, h, Sigma = NULL, m_iter) {
   as.numeric(x)
 }
 
-# Match RWM to the common transition signature.
+# rwm takes no score_function, so this wrapper gives it the signature that
+# sp_mcmc calls.
 .sp_mcmc_rwm_transition <- function(log_p, score_function, x0, h, Sigma,
                                     m_iter) {
   rwm(log_p = log_p, x0 = x0, h = h, Sigma = Sigma, m_iter = m_iter)
 }
 
 
-# Internal start-rule machinery
-
-# Build the state passed to custom start rules.
-.sp_mcmc_state <- function(j, X, D, K0, ksd = NULL, n_eval = NULL,
-                           counts = NULL, selected_index = NULL,
-                           kernel = NULL, mcmc = NULL, criterion = NULL) {
-  list(
-    j = j, X = X, D = D, K0 = K0, ksd = ksd, n_eval = n_eval,
-    counts = counts, selected_index = selected_index,
-    kernel = kernel, mcmc = mcmc, criterion = criterion
-  )
-}
-
-# Normalize built-in and custom start rules.
 .sp_mcmc_criterion <- function(criterion = c("last", "rand", "infl")) {
   if (is.list(criterion) && is.function(criterion$select)) {
     fn <- criterion$select
     label <- if (is.null(criterion$label)) "custom" else criterion$label
   } else {
+    if (!is.null(criterion) && !is.character(criterion)) {
+      stop("`criterion` must be \"last\", \"rand\", \"infl\", or list(select = function(state) ...)",
+           call. = FALSE)
+    }
     name <- match.arg(criterion, c("last", "rand", "infl"))
     fn <- switch(
       name,
@@ -468,28 +468,23 @@ rwm <- function(log_p, x0, h, Sigma = NULL, m_iter) {
   list(label = label, select = fn, needs_k0 = TRUE)
 }
 
-# Validate the selected row index.
 .sp_mcmc_select_start <- function(criterion_obj, state) {
   idx <- criterion_obj$select(state)
   is_integer <- is.numeric(idx) && length(idx) == 1L && is.finite(idx) &&
     abs(idx - round(idx)) <= sqrt(.Machine$double.eps)
   if (!is_integer || idx < 1L || idx > nrow(state$X)) {
-    msg <- if (is_integer)
-      "criterion must return one valid one-based index into the current point set"
-    else
-      "criterion must return one valid one-based integer index into the current point set"
-    stop(msg, call. = FALSE)
+    stop("criterion must return one valid one-based index into the current point set",
+         call. = FALSE)
   }
   as.integer(round(idx))
 }
 
 .crit_infl <- function(K0_cache) {
-  # The smallest contribution leaves the largest KSD after removal.
+  # Removing point i lowers the kernel sum by its row sum plus column sum minus
+  # its diagonal, so the smallest such contribution leaves the largest KSD.
   which.min(rowSums(K0_cache) + colSums(K0_cache) - diag(K0_cache))
 }
 
-
-# Internal main loop and its helpers
 
 .sp_mcmc_run <- function(score_function, log_p, kernel, n_points, d,
                          mcmc, criterion_obj, m_seq, h, Sigma, x_init,
@@ -504,7 +499,11 @@ rwm <- function(log_p, x0, h, Sigma = NULL, m_iter) {
   X <- D <- matrix(NA_real_, n_points, d)
   n_eval <- integer(n_points)
   ksd <- numeric(n_points)
-  counts <- .sp_mcmc_count_matrix(n_points)
+  counts <- matrix(
+    0L, nrow = n_points, ncol = 5L,
+    dimnames = list(NULL, c("log_p", "score", "candidate_score",
+                            "transition_total", "total"))
+  )
   selected_index <- rep(NA_integer_, n_points)
   chain_diagnostics <- matrix(
     NA_real_, nrow = n_points, ncol = 4L,
@@ -521,8 +520,7 @@ rwm <- function(log_p, x0, h, Sigma = NULL, m_iter) {
   )[1L, ]
   ss <- as.numeric(k0_diag(kernel, matrix(x_init, 1L, d), matrix(D[1L, ], 1L, d)))
   K0_cache <- if (criterion_obj$needs_k0) matrix(ss, nrow = 1L) else NULL
-  if (ss < -sqrt(.Machine$double.eps)) warning("Accumulated squared KSD is negative; using 0.", call. = FALSE)
-  ksd[1L] <- sqrt(max(ss, 0))
+  ksd[1L] <- .running_ksd(ss, 1L)
   counts[1L, ] <- c(log_p = 0L, score = 1L, candidate_score = 0L,
                     transition_total = 0L, total = 1L)
   n_eval[1L] <- as.integer(counts[1L, "total"])
@@ -531,8 +529,7 @@ rwm <- function(log_p, x0, h, Sigma = NULL, m_iter) {
     for (j in 2:n_points) {
       X_curr <- X[seq_len(j - 1L), , drop = FALSE]
       D_curr <- D[seq_len(j - 1L), , drop = FALSE]
-      # Choose the selected point that starts this path.
-      state <- .sp_mcmc_state(
+      state <- list(
         j = j, X = X_curr, D = D_curr, K0 = K0_cache,
         ksd = ksd[seq_len(j - 1L)],
         n_eval = n_eval[seq_len(j - 1L)],
@@ -554,14 +551,14 @@ rwm <- function(log_p, x0, h, Sigma = NULL, m_iter) {
         mcmc = mcmc
       )
 
-      # m_j includes the starting state.
+      # m_j counts the starting state, so the chain makes m_j minus 1
+      # transitions.
       chain <- chain_fn(
         log_p, score_function, start, proposal$h, proposal$Sigma, m_j
       )
       chain <- .sp_mcmc_validate_chain(
         chain, d, expected_n = m_j, start = start
       )
-      # Remove repeated states before scoring candidates.
       path <- .sp_mcmc_unique_path(chain)
 
       cand_X <- path$X
@@ -574,7 +571,6 @@ rwm <- function(log_p, x0, h, Sigma = NULL, m_iter) {
       cand_D <- cand_eval$scores
       objective_values <- cand_eval$objective_values
 
-      # Append the candidate with the smallest Stein increment.
       i_min <- which.min(objective_values)
       x_min <- as.numeric(cand_X[i_min, ])
       d_min <- as.numeric(cand_D[i_min, ])
@@ -585,10 +581,10 @@ rwm <- function(log_p, x0, h, Sigma = NULL, m_iter) {
       if (criterion_obj$needs_k0) K0_cache <- .sp_mcmc_append_k0(
         kernel, X_curr, D_curr, K0_cache, x_min, d_min
       )
-      # f_min is the new point's contribution to the kernel sum.
+      # f_min is k0 of the new point with itself plus twice its k0 with each
+      # earlier point, which is exactly the increase in the kernel sum.
       ss <- ss + f_min
-      if (ss < -sqrt(.Machine$double.eps)) warning("Accumulated squared KSD is negative; using 0.", call. = FALSE)
-      ksd[j] <- sqrt(max(ss, 0)) / j
+      ksd[j] <- .running_ksd(ss, j)
 
       chain_diagnostics[j, ] <- .sp_mcmc_chain_diagnostics(
         chain = chain,
@@ -596,7 +592,6 @@ rwm <- function(log_p, x0, h, Sigma = NULL, m_iter) {
         selected = x_min
       )
 
-      # Count transition work and deferred candidate scores separately.
       auto_counts <- .sp_mcmc_eval_counts(
         chain = chain,
         candidate_score_eval = cand_eval$score_evaluations
@@ -640,11 +635,10 @@ rwm <- function(log_p, x0, h, Sigma = NULL, m_iter) {
 }
 
 .sp_mcmc_chain_diagnostics <- function(chain, start, selected) {
-  # Measure path distances from the starting state.
   d2 <- rowSums((sweep(chain$X, 2L, start, "-"))^2)
-  # Indicators align with path rows; the initial state is not a transition.
-  accept_rate <- if (!is.null(chain$accept) &&
-    length(chain$accept) == nrow(chain$X) && nrow(chain$X) > 1L) {
+  # accept has one entry per row and row 1 is the start, so the rate skips the
+  # first entry.
+  accept_rate <- if (!is.null(chain$accept) && nrow(chain$X) > 1L) {
     mean(chain$accept[-1L] == 1L)
   } else {
     NA_real_
@@ -658,24 +652,16 @@ rwm <- function(log_p, x0, h, Sigma = NULL, m_iter) {
   )
 }
 
-.sp_mcmc_count_matrix <- function(n_points) {
-  out <- matrix(0L, n_points, 5L)
-  colnames(out) <- c("log_p", "score", "candidate_score",
-                     "transition_total", "total")
-  out
-}
-
-.sp_mcmc_validate_chain <- function(chain, d, expected_n = NULL, start = NULL) {
+.sp_mcmc_validate_chain <- function(chain, d, expected_n, start) {
   if (!is.list(chain)) stop("transition function must return a list", call. = FALSE)
   if (is.null(chain$X)) stop("transition function must return list element X", call. = FALSE)
   Chn <- .as_rows(chain$X, "transition function X")
   if (ncol(Chn) != d)
     stop("transition function returned X with wrong dimension", call. = FALSE)
-  if (!is.null(expected_n) && nrow(Chn) != expected_n)
+  if (nrow(Chn) != expected_n)
     stop("transition function must return exactly ", expected_n,
          " rows, including the initial state", call. = FALSE)
-  if (!is.null(start) &&
-      !identical(as.numeric(Chn[1L, ]), as.numeric(start)))
+  if (!identical(as.numeric(Chn[1L, ]), as.numeric(start)))
     stop("transition function must return the supplied initial state in row 1", call. = FALSE)
   chain$X <- Chn
   if (!is.null(chain$accept) &&
@@ -683,8 +669,6 @@ rwm <- function(log_p, x0, h, Sigma = NULL, m_iter) {
        chain$accept[1L] != 0))
     stop("transition accept must align with X, contain 0/1, and start with 0", call. = FALSE)
 
-  if (!("D" %in% names(chain)))
-    stop("transition function must return D as a score matrix or NULL", call. = FALSE)
   if (!is.null(chain$D)) {
     chain_D <- as.matrix(chain$D)
     if (!is.numeric(chain_D) || any(!is.finite(chain_D)) ||
@@ -694,16 +678,14 @@ rwm <- function(log_p, x0, h, Sigma = NULL, m_iter) {
     chain$D <- chain_D
   }
 
-  required <- c("log_p", "score", "total")
+  required <- c("log_p", "score")
   if (!is.list(chain$counts) || any(!required %in% names(chain$counts)))
-    stop("transition function must return counts with log_p, score, and total",
+    stop("transition function must return counts with log_p and score",
          call. = FALSE)
   counts <- vapply(required, function(nm) {
     validate_integer(chain$counts[[nm]], paste0("counts$", nm), min_value = 0L)
   }, integer(1L))
-  if (counts[["total"]] != counts[["log_p"]] + counts[["score"]])
-    stop("transition counts$total must equal counts$log_p + counts$score", call. = FALSE)
-  chain$counts <- as.list(counts)
+  chain$counts <- c(as.list(counts), total = sum(counts))
   chain
 }
 
@@ -727,10 +709,7 @@ rwm <- function(log_p, x0, h, Sigma = NULL, m_iter) {
   unname(rbind(cbind(K0_curr, new_row), c(new_row, new_diag)))
 }
 
-.sp_mcmc_eval_counts <- function(chain, candidate_score_eval = 0L) {
-  candidate_score_eval <- validate_integer(
-    candidate_score_eval, "candidate score evaluations", min_value = 0L
-  )
+.sp_mcmc_eval_counts <- function(chain, candidate_score_eval) {
   transition_total <- chain$counts$total
   c(
     log_p = chain$counts$log_p,
@@ -742,52 +721,21 @@ rwm <- function(log_p, x0, h, Sigma = NULL, m_iter) {
 }
 
 
-# S3 methods
-
 #' @export
 print.sp_mcmc <- function(x, ...) {
-  cat(sprintf("SP-MCMC  [%s + %s]  n=%d  d=%d  KSD=%.4g  n_eval=%d\n",
+  cat(sprintf("SP-MCMC  [%s + %s]  n=%d  d=%d  KSD=%.4g  n_eval=%.0f\n",
               x$transition, x$criterion, nrow(x$X), ncol(x$X),
-              x$ksd[length(x$ksd)], x$cum_n_eval[length(x$cum_n_eval)]))
+              .last_value(x$ksd), .last_value(x$cum_n_eval)))
   invisible(x)
 }
 
 
-#' Summarize an SP-MCMC point set
-#'
-#' Adds SP-MCMC transition, selection, acceptance, and evaluation
-#' diagnostics to [summary.stein_points()].
-#'
-#' @details
-#' `accept_rate` is weighted by the number of transitions in each path;
-#' paths without acceptance diagnostics are omitted. `n_repeated` counts
-#' selected points that repeat an earlier one; a candidate path contains its own
-#' starting state, so repeats are expected. `h` is the initial
-#' step size, before any per-step proposal changes. `counts` contains the
-#' `log_p`, `score`, and `candidate_score` column totals; `n_eval_total`
-#' reports their total once.
-#'
-#' @param object A `"sp_mcmc"` object.
-#' @param x A `"summary.sp_mcmc"` object.
-#' @param ... Ignored.
-#'
-#' @return
-#' A `"summary.sp_mcmc"` object extending `"summary.stein_points"` with
-#' `transition`, `criterion`, `m_seq`, `h`, `accept_rate`, `n_repeated`, and
-#' `counts`. The print method returns `x` invisibly.
-#' @seealso [summary.stein_points()], [sp_mcmc()]
-#' @examples
-#' score_function <- function(x) -as.matrix(x)
-#' log_p <- function(x) -0.5 * rowSums(as.matrix(x)^2)
-#' fit <- sp_mcmc(score_function, log_p,
-#'                stein_kernel(type = "gaussian_rbf", h = 1),
-#'                n_points = 4, d = 1, m_seq = 2, h = 0.5, x_init = 0)
-#' summary(fit)
 #' @export
 summary.sp_mcmc <- function(object, ...) {
-  out <- summary.stein_points(object)
-  # `n_eval` here is the sum over the evaluation categories in `counts`.
-  out$evaluation_label <- "total evaluations"
+  out <- .point_set_summary(object, "total evaluations", "summary.sp_mcmc")
+  if (length(object$ksd)) {
+    out$ksd_last <- object$ksd[length(object$ksd)]
+  }
   out$transition <- object$transition
   out$criterion <- object$criterion
   out$m_seq <- object$m_seq
@@ -801,15 +749,12 @@ summary.sp_mcmc <- function(object, ...) {
   out$counts <- colSums(object$counts[, c("log_p", "score", "candidate_score"),
                                     drop = FALSE])
   out$n_repeated <- object$n_repeated
-  class(out) <- c("summary.sp_mcmc", "summary.stein_points")
   out
 }
 
-#' @rdname summary.sp_mcmc
 #' @export
 print.summary.sp_mcmc <- function(x, ...) {
-  cat(sprintf("%s  n=%d  d=%d  kernel=%s\n",
-              .point_set_label(x$method), x$n, x$d, x$kernel))
+  cat(sprintf("SP-MCMC  n=%d  d=%d  kernel=%s\n", x$n, x$d, x$kernel))
   cat(sprintf(
     "  chain: %s, criterion %s, m_seq %s, initial step size %g\n",
     x$transition, x$criterion,
@@ -820,5 +765,9 @@ print.summary.sp_mcmc <- function(x, ...) {
   cat("  evaluations:",
       paste(sprintf("%s=%d", names(x$counts), x$counts), collapse = "  "),
       "\n")
-  .print_point_set_body(x)
+  if (!is.null(x$ksd_last)) {
+    cat(sprintf("  KSD: %.4g\n", x$ksd_last))
+  }
+  cat(sprintf("  %s: %.0f\n", x$evaluation_label, x$n_eval_total))
+  invisible(x)
 }

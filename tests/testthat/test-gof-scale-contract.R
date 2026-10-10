@@ -26,20 +26,20 @@ test_that("GOF statistics and their calibration draws share one scale", {
   expect_finite_numeric(null$null_samples)
 })
 
-test_that("kernel_scale2 reports, replaces, and reaches FSSD-opt", {
-  expect_equal(kernel_scale2(stein_kernel(type = "gaussian_rbf", h = 2)), 4)
-  expect_equal(kernel_scale2(stein_kernel(type = "imq", c = 3)), 9)
-  expect_identical(kernel_scale2(stein_kernel(type = "gaussian_rbf")), NA_real_)
+test_that("scale2_kernel reports, replaces, and reaches FSSD-opt", {
+  expect_equal(scale2_kernel(stein_kernel(type = "gaussian_rbf", h = 2)), 4)
+  expect_equal(scale2_kernel(stein_kernel(type = "imq", c = 3)), 9)
+  expect_identical(scale2_kernel(stein_kernel(type = "gaussian_rbf")), NA_real_)
   # A kernel with no scale hook reports none and refuses to take one.
-  expect_null(kernel_scale2(stein_kernel_inverse_log(alpha = 1, beta = -1)))
+  expect_null(scale2_kernel(stein_kernel_inverse_log(alpha = 1, beta = -1)))
   expect_error(
-    kernel_scale2(stein_kernel_inverse_log(alpha = 1, beta = -1), 9),
+    scale2_kernel(stein_kernel_inverse_log(alpha = 1, beta = -1), 9),
     "does not support scale optimization"
   )
 
   replaceable <- list(stein_kernel(type = "gaussian_rbf"),
                       stein_kernel(type = "imq", c = 1), custom_rbf(2))
-  for (k in replaceable) expect_equal(kernel_scale2(kernel_scale2(k, 9)), 9)
+  for (k in replaceable) expect_equal(scale2_kernel(scale2_kernel(k, 9)), 9)
 
   # Every route into FSSD-opt optimizes the same scale.
   builtin <- fssd_opt_scale2(stein_kernel(type = "gaussian_rbf", h = 1))

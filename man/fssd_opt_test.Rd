@@ -15,17 +15,19 @@ fssd_opt_test(
   gamma = 1e-04,
   maxit = 100,
   locs_bounds_frac = 10,
-  scale_lower = 0.1,
-  scale_upper = 10000,
-  seed = NULL,
+  scale_lower = NULL,
+  scale_upper = NULL,
   imq_beta = -0.5
 )
 }
 \arguments{
-\item{X}{Numeric vector or matrix of samples (\verb{n x d}).}
+\item{X}{Numeric vector or matrix containing \code{n} independent and identically
+distributed observations. Rows are observations and columns are
+coordinates; a vector is treated as an \eqn{n\times 1} matrix.
+At least four observations are required.}
 
-\item{score_function}{Function returning the target score for each row of
-\code{X}; the output should have shape \verb{n x d}.}
+\item{score_function}{Function taking an \eqn{n\times d} matrix and
+returning the corresponding \eqn{n\times d} matrix of target scores.}
 
 \item{J}{Number of test locations.}
 
@@ -36,12 +38,14 @@ fssd_opt_test(
 \item{scaling}{Starting positive squared kernel scale (\eqn{h^2} for
 Gaussian RBF, \eqn{c^2} for IMQ). \code{NULL} uses a five-value grid around the
 training-row median squared scale when the kernel needs one. Supplying a
-value skips that grid but does not fix an optimizable squared scale.
+value gives the starting value instead; an optimizable squared scale is
+still optimized from there.
 A finite squared scale in a
 supplied \code{SteinKernel} is the starting value and takes precedence;
 \code{scaling} is ignored when the kernel exposes no squared scale.}
 
-\item{train_ratio}{Fraction of rows requested for FSSD-opt training.}
+\item{train_ratio}{Requested FSSD-opt training fraction in \eqn{(0,1)};
+the random split keeps at least two rows in each part.}
 
 \item{gamma}{Positive regularizer in the FSSD-opt criterion.}
 
@@ -51,19 +55,24 @@ supplied \code{SteinKernel} is the starting value and takes precedence;
 below each coordinate minimum and above each coordinate maximum.}
 
 \item{scale_lower, scale_upper}{Bounds applied to the squared kernel scale
-when that scale is optimized.}
-
-\item{seed}{Optional RNG seed for splitting rows, drawing starting locations,
-and simulating held-out null draws.}
+when that scale is optimized. \code{NULL} uses 0.01 and 100 times the median
+squared distance of the training rows, kept within 1e-3 and 1e5.}
 
 \item{imq_beta}{Finite IMQ exponent \eqn{\beta<0}.}
 }
 \value{
 An object of class \code{htest}. \code{statistic} is
-\eqn{S_{n_{test}}=n_{test}\widehat{FSSD}^2}, computed on the held-out rows;
+\eqn{S_{\tilde n}=\tilde n\widehat{FSSD}^2}, computed on the \eqn{\tilde n}
+held-out rows;
 \code{p.value} is obtained from the held-out plug-in null calibration. \code{info}
-contains \code{V}, the realized split sizes, optimized squared scale, objective
-value, objective-function count, and optimizer convergence code.
+contains \code{V} (test locations), \code{n_train} and \code{n_test} (split sizes),
+\code{scale2_opt} (optimized squared scale), \code{objective_opt} (training criterion),
+\code{function_evaluations} (optimizer function evaluations), and \code{convergence}
+(0 for successful optimizer termination; otherwise see \code{\link[stats:optim]{stats::optim()}}).
+
+\code{scale_grid} and \code{scale_grid_objectives} record the optional initial scale
+search.
+Use \code{print(fit)} to display the test statistic and p-value.
 }
 \description{
 Selects the test locations \eqn{L = \{v_1,\ldots,v_J\}} and, when the
@@ -74,7 +83,7 @@ The FSSD statistic and null calibration use disjoint held-out rows.
 The training criterion to maximize is
 \deqn{
 C(L,\rho) =
-\frac{\widehat{FSSD}_{train}^2}
+\frac{\widehat{FSSD}_{\mathrm{train}}^2}
      {\sqrt{\widehat{\mathrm{Var}}_{H_1}} + \gamma},
 }
 where
@@ -83,7 +92,7 @@ where
   = 4\bar\tau^T\widehat\Sigma_\tau\bar\tau,
 \qquad
 \widehat\Sigma_\tau
-  = \frac{1}{n_{train}}\sum_{i=1}^{n_{train}}
+  = \frac{1}{n_{\mathrm{train}}}\sum_{i=1}^{n_{\mathrm{train}}}
     (\tau_i-\bar\tau)(\tau_i-\bar\tau)^T.
 }
 Here \eqn{\bar\tau} is the mean feature vector on the training rows, and
@@ -92,14 +101,26 @@ Here \eqn{\bar\tau} is the mean feature vector on the training rows, and
 Starting locations are drawn from a Gaussian fitted to the training rows.
 Bounded L-BFGS-B refines \code{L} and any optimizable squared scale jointly;
 the \code{scaling} argument specifies how its starting value is chosen.
+\code{\link[=fssd_grad_kernel]{fssd_grad_kernel()}} supplies the gradient, one test location at a time.
 
 The selected locations and kernel are fixed for the held-out test.
-Conditional on the training rows, these choices are independent of the test
-rows, as required by the null calibration in \code{\link[=fssd_null_pvalue]{fssd_null_pvalue()}}.
+For i.i.d. observations, choices based only on the training rows are
+independent of the held-out rows, as required by the null calibration in
+\code{\link[=fssd_null_pvalue]{fssd_null_pvalue()}}.
+For the common interface and choice of variant, see \code{\link[=fssd_test]{fssd_test()}}.
 }
 \examples{
-X <- matrix(rnorm(40), ncol = 1)
-score_function <- function(x) -as.matrix(x)
-fssd_opt_test(X, score_function, J = 1, scaling = 1,
-              train_ratio = 0.5, n_simulations = 10, maxit = 2)
+set.seed(1)
+X <- matrix(rnorm(200, mean = 0.5), ncol = 1)
+score <- function(X) -X  # Target: N(0, 1)
+fit <- fssd_opt_test(X, score, J = 3, scaling = 1, train_ratio = 0.5)
+c(statistic = unname(fit$statistic), p.value = fit$p.value)
+fit$info$convergence  # 0: successful optimizer termination.
+}
+\references{
+Jitkrittum, W., Xu, W., Szabó, Z., Fukumizu, K., and Gretton, A. (2017).
+A Linear-Time Kernel Goodness-of-Fit Test.
+Advances in Neural Information Processing Systems, 30, 262--271.
+Curran Associates, Inc.
+\url{https://papers.nips.cc/paper_files/paper/2017/hash/979d472a84804b9f647bc185a877a8b5-Abstract.html}.
 }

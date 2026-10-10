@@ -1,31 +1,7 @@
-# Validation, RNG, scale, and block helpers.
+# Helpers shared by several files, mainly argument checks, the median scale and
+# the KSD input preparation.
 
-# Public median-heuristic scale
-
-#' Median-heuristic squared scale
-#'
-#' Computes the squared median Euclidean distance between sample rows.
-#'
-#' @details
-#' For rows \eqn{z_1,\ldots,z_n}, the returned scale is
-#' \deqn{\rho_{\mathrm{med}}
-#' =\left\{\mathop{\mathrm{median}}_{i<j}
-#' \lVert z_i-z_j\rVert_2\right\}^{2}.}
-#' The median is taken before squaring. All \eqn{n(n-1)/2} pairs are used, so
-#' the calculation requires quadratic time and memory. Coordinates are not
-#' standardized. If the median distance is zero, the function warns and
-#' returns the floor value \eqn{10^{-5}}.
-#'
-#' @param Z Finite numeric vector, matrix, or data frame with at least two
-#'   observations. Matrix rows are observations; a vector is treated as an
-#'   `n x 1` sample.
-#' @return
-#' The positive scalar \eqn{\rho_{\mathrm{med}}}.
-#' @examples
-#' find_median_distance(c(-1, 0, 2))
-#'
-#' Z <- matrix(c(0, 0, 1, 0, 0, 2), ncol = 2, byrow = TRUE)
-#' find_median_distance(Z)
+#' @rdname kernel_scales
 #' @export
 find_median_distance <- function(Z) {
   Z <- .as_rows(Z, "Z", 2L)
@@ -37,7 +13,7 @@ find_median_distance <- function(Z) {
   }
   if (med == 0) {
     warning(
-      "Median pairwise distance is zero; using 1e-5 instead. Check `Z` for repeated rows.",
+      "Median pairwise distance is zero; using 1e-5 instead; check `Z` for repeated rows",
       call. = FALSE
     )
     med <- 1e-5
@@ -46,8 +22,6 @@ find_median_distance <- function(Z) {
   med
 }
 
-
-# Internal validation, RNG, and evaluation-mode helpers
 
 .as_rows <- function(x, arg_name = "X", min_rows = 1L) {
   if (is.null(dim(x))) {
@@ -126,37 +100,21 @@ validate_flag <- function(x, arg_name) {
   x
 }
 
-# Run with a temporary seed, then restore the caller's RNG state.
-with_local_seed <- function(seed, expr) {
-  if (is.null(seed)) {
-    return(force(expr))
+validate_positive_scalar <- function(x, arg_name) {
+  if (!is.numeric(x) || length(x) != 1L || !is.finite(x) || x <= 0) {
+    stop(sprintf("`%s` must be a finite positive scalar", arg_name), call. = FALSE)
   }
-  seed <- as.integer(seed)
-  had_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
-  if (had_seed) {
-    old_seed <- get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
-  }
-  on.exit(
-    {
-      if (had_seed) {
-        assign(".Random.seed", old_seed, envir = .GlobalEnv)
-      } else if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
-        rm(".Random.seed", envir = .GlobalEnv)
-      }
-    },
-    add = TRUE
-  )
-  set.seed(seed)
-  force(expr)
+  as.numeric(x)
 }
 
-# Use the diagonal magnitude as the relative scale for off-diagonal interactions.
+# Compare the off-diagonal size with the diagonal, so the check does not depend
+# on the scale of K0.
 .warn_if_degenerate_stein_matrix <- function(offdiag_max, diag_max,
                                              tol = 1e-12) {
   degenerate <- offdiag_max == 0 ||
     (diag_max > 0 && offdiag_max <= tol * diag_max)
   if (isTRUE(degenerate)) {
-    warning("The Stein kernel matrix is nearly diagonal; the KSD bootstrap may be degenerate.",
+    warning("The Stein kernel matrix is nearly diagonal; the KSD bootstrap may be degenerate",
             call. = FALSE)
   }
   invisible(NULL)
@@ -190,15 +148,21 @@ with_local_seed <- function(seed, expr) {
 
   if (inherits(kernel, "SteinKernel")) {
     kernel_obj <- kernel
-    kernel_name <- kernel_type_name(kernel_obj)
-    kernel_scale <- kernel_scaling_value(kernel_obj)
-    if (inherits(kernel_obj, "SteinKernel_gaussian_rbf") &&
+    kernel_name <- kernel_obj$type
+    kernel_scale <- scale2_kernel(kernel_obj)
+    if (is.null(kernel_scale)) kernel_scale <- NA_real_
+    if (identical(kernel_obj$type, "gaussian_rbf") &&
         !is.finite(kernel_scale)) {
       if (is.null(scaling)) {
         scaling <- resolve_gaussian_rbf_scale2(kernel_obj, x_mat)
       }
-      kernel_obj <- kernel_scale2(kernel_obj, scaling)
+      validate_positive_scalar(scaling, "scaling")
+      kernel_obj <- scale2_kernel(kernel_obj, scaling)
     } else {
+      if (!is.null(scaling)) {
+        warning("`scaling` is ignored because the kernel object sets its own scale",
+                call. = FALSE)
+      }
       scaling <- kernel_scale
     }
   } else {
@@ -206,6 +170,7 @@ with_local_seed <- function(seed, expr) {
     if (is.null(scaling)) {
       scaling <- find_median_distance(x_mat)
     }
+    validate_positive_scalar(scaling, "scaling")
     kernel_obj <- instantiate_kernel(kernel_name, scaling, imq_beta)
   }
 
@@ -230,40 +195,27 @@ with_local_seed <- function(seed, expr) {
   K0
 }
 
-# Shared helpers supporting S3 methods for sampling results.
-.point_set_label <- function(method) {
-  switch(method,
-    greedy = "Stein Points (greedy)", herding = "Stein Points (herding)",
-    codescent = "Stein codescent", svgd = "SVGD", sp_mcmc = "SP-MCMC", method)
+# The KSD of j points is the square root of their kernel sum ss, divided by j.
+# Roundoff can make ss slightly negative, so it is clipped at 0.
+.running_ksd <- function(ss, j) {
+  if (ss < -sqrt(.Machine$double.eps)) warning("Accumulated squared KSD is negative; using 0", call. = FALSE)
+  sqrt(max(ss, 0)) / j
 }
 
-.point_set_summary <- function(object, evaluation_label) {
+.last_value <- function(v) if (length(v)) v[length(v)] else NA_real_
+
+.point_set_summary <- function(object, evaluation_label, class) {
   X <- object$X
   structure(
     list(
       method = object$method,
-      kernel = kernel_type_name(object$kernel),
+      kernel = object$kernel$type,
       n = nrow(X),
       d = ncol(X),
       evaluation_label = evaluation_label,
-      n_eval_total = if (length(object$cum_n_eval)) {
-        object$cum_n_eval[length(object$cum_n_eval)]
-      } else {
-        NA_real_
-      },
+      n_eval_total = .last_value(object$cum_n_eval),
       call = object$call
     ),
-    class = "summary.stein_points"
+    class = class
   )
-}
-
-.print_point_set_body <- function(x) {
-  if (!is.null(x$ksd_last)) {
-    cat(sprintf("  KSD: %.4g\n", x$ksd_last))
-  }
-  cat(sprintf("  %s: %g\n", x$evaluation_label, x$n_eval_total))
-  if (!is.null(x$truncation) && !identical(x$truncation, "none")) {
-    cat(sprintf("  truncation: %s  c2=%g\n", x$truncation, x$c2))
-  }
-  invisible(x)
 }
